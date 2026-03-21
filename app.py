@@ -1,6 +1,52 @@
 """
 Healthcare Revenue Cycle Management (RCM) Analytics Dashboard
-A comprehensive Streamlit application for monitoring RCM KPIs.
+=============================================================
+
+This is the main Streamlit application that provides an interactive,
+multi-tab dashboard for monitoring healthcare revenue cycle KPIs.
+
+Architecture:
+    ┌──────────────────────────────────────────────────────────┐
+    │                    Streamlit App (app.py)                 │
+    │  ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐  │
+    │  │  Tab 1   │  │  Tab 2   │  │  Tab 3   │  │ Tab 4-6 │  │
+    │  │ Summary  │  │ Revenue  │  │ Claims   │  │  More   │  │
+    │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬────┘  │
+    │       └──────────────┴─────────────┴─────────────┘       │
+    │                         │                                 │
+    │              ┌──────────▼──────────┐                     │
+    │              │ Metrics Engine      │                     │
+    │              │ (src/metrics.py)    │                     │
+    │              └──────────┬──────────┘                     │
+    │              ┌──────────▼──────────┐                     │
+    │              │ Data Loader         │                     │
+    │              │ (src/data_loader.py)│                     │
+    │              └──────────┬──────────┘                     │
+    │              ┌──────────▼──────────┐                     │
+    │              │ SQLite Database     │                     │
+    │              │ (data/*.db)         │                     │
+    │              └─────────────────────┘                     │
+    └──────────────────────────────────────────────────────────┘
+
+Dashboard Tabs:
+    1. Executive Summary  — 8 KPI scorecards + key trends + volume
+    2. Collections & Revenue — Revenue waterfall, collection trends, cost analysis
+    3. Claims & Denials   — Denial analysis, clean claims, charge lag, appeals
+    4. A/R Aging & Cash   — Aging buckets, DAR trend, monthly cash flow
+    5. Payer Analysis     — Revenue by payer, denial rates, payer comparison
+    6. Department Perf.   — Revenue by department, encounter mix
+
+How Streamlit Works (for educational purposes):
+    - Streamlit reruns this entire script top-to-bottom on every user interaction
+      (filter change, tab switch, etc.).
+    - @st.cache_data prevents reloading data from the database on every rerun.
+    - Sidebar widgets (selectbox, date_input) return the user's current selection.
+    - st.tabs() creates a tabbed interface; content under each `with tab:` block
+      only renders when that tab is active.
+
+Running the Dashboard:
+    pip install -r requirements.txt
+    streamlit run app.py
 """
 
 import streamlit as st
@@ -9,8 +55,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from src.data_loader import load_all_data
-from src.metrics import (
+# Import our custom modules
+from src.data_loader import load_all_data       # Loads all tables from SQLite
+from src.metrics import (                        # 17 KPI calculation functions
     calc_days_in_ar,
     calc_net_collection_rate,
     calc_gross_collection_rate,
@@ -31,6 +78,9 @@ from src.metrics import (
 )
 
 # ── Page Config ──────────────────────────────────────────────────────
+# set_page_config() MUST be the first Streamlit command in the script.
+# It configures the browser tab title, favicon, and default layout.
+# "wide" layout uses the full browser width instead of a centered column.
 st.set_page_config(
     page_title="Healthcare RCM Analytics",
     page_icon="🏥",
@@ -39,6 +89,11 @@ st.set_page_config(
 )
 
 # ── Custom CSS ───────────────────────────────────────────────────────
+# Streamlit allows injecting custom CSS via st.markdown with unsafe_allow_html.
+# We use this to create color-coded KPI cards:
+#   - Green gradient (metric-good): KPI is meeting/exceeding benchmarks
+#   - Yellow/Orange gradient (metric-warn): KPI needs attention
+#   - Red gradient (metric-bad): KPI is critical and needs immediate action
 st.markdown("""
 <style>
     .metric-card {
@@ -60,6 +115,15 @@ st.markdown("""
 
 
 def metric_card(label, value, benchmark="", status="neutral"):
+    """
+    Render a styled KPI card with color coding based on performance status.
+
+    Args:
+        label:     KPI name (e.g., "Days in A/R")
+        value:     KPI value to display (e.g., "32.5")
+        benchmark: Industry benchmark text (e.g., "Benchmark: < 35 days")
+        status:    "good", "warn", "bad", or "neutral" — controls card color
+    """
     css_class = {
         "good": "metric-card metric-good",
         "warn": "metric-card metric-warn",
@@ -73,8 +137,19 @@ def metric_card(label, value, benchmark="", status="neutral"):
 
 
 # ── Load Data ────────────────────────────────────────────────────────
+# @st.cache_data is a Streamlit decorator that caches the return value.
+# On the first run, it calls load_all_data() (which queries SQLite).
+# On subsequent reruns (user interactions), it returns the cached result
+# instantly. This is essential for performance — without caching, every
+# filter change would re-query the entire database.
+#
+# The cache is invalidated when:
+#   - The function code changes
+#   - The app is restarted
+#   - You call st.cache_data.clear()
 @st.cache_data
 def get_data():
+    """Load all RCM data from SQLite (cached after first call)."""
     return load_all_data()
 
 
@@ -89,9 +164,18 @@ payers = data["payers"]
 operating_costs = data["operating_costs"]
 
 # ── Sidebar Filters ─────────────────────────────────────────────────
+# Sidebar filters allow users to slice data interactively. The filter
+# cascade works as follows:
+#   1. Date range -> filters claims and encounters by date_of_service
+#   2. Payer -> filters claims to a specific insurance company
+#   3. Department -> filters encounters (and thus claims) by dept
+#   4. Encounter Type -> filters by visit type (outpatient, ED, etc.)
+#
+# All filters are applied BEFORE any metrics are calculated, so the
+# KPIs always reflect the filtered subset of data.
 st.sidebar.title("Filters")
 
-# Date range filter
+# Date range filter — lets users focus on a specific time period
 min_date = claims["date_of_service"].min().date()
 max_date = claims["date_of_service"].max().date()
 date_range = st.sidebar.date_input(
@@ -114,6 +198,9 @@ enc_type_options = ["All"] + sorted(encounters["encounter_type"].unique().tolist
 selected_enc_type = st.sidebar.selectbox("Encounter Type", enc_type_options)
 
 # ── Apply Filters ────────────────────────────────────────────────────
+# The filtering strategy: start with claims (the central table) and filter
+# outward to related tables. This ensures all metrics use consistent data.
+# We use .copy() to avoid pandas SettingWithCopyWarning.
 if len(date_range) == 2:
     start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
 else:
@@ -140,7 +227,9 @@ if selected_enc_type != "All":
     enc_ids = f_encounters["encounter_id"].unique()
     f_claims = f_claims[f_claims["encounter_id"].isin(enc_ids)]
 
-# Filter related tables
+# Filter related tables by cascading from filtered claims.
+# This ensures payments, denials, and adjustments only include records
+# that belong to the filtered set of claims.
 claim_ids = f_claims["claim_id"].unique()
 f_payments = payments[payments["claim_id"].isin(claim_ids)].copy()
 f_denials = denials[denials["claim_id"].isin(claim_ids)].copy()
@@ -164,9 +253,19 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 # =====================================================================
 # TAB 1: EXECUTIVE SUMMARY
 # =====================================================================
+# The Executive Summary provides a "single pane of glass" view of the
+# 8 most critical RCM KPIs. Each KPI card is color-coded:
+#   Green  = Meeting industry benchmark
+#   Yellow = Approaching danger zone
+#   Red    = Below benchmark, needs immediate attention
+#
+# Below the KPI cards, trend charts show how DAR and NCR are tracking
+# over time, with benchmark lines for reference.
+# =====================================================================
 with tab1:
     st.header("Executive Summary")
 
+    # Calculate all KPIs for the filtered data
     dar_val, dar_trend = calc_days_in_ar(f_claims, f_payments)
     ncr_val, ncr_trend = calc_net_collection_rate(f_claims, f_payments, f_adjustments)
     gcr_val, gcr_trend = calc_gross_collection_rate(f_claims, f_payments)
@@ -248,6 +347,13 @@ with tab1:
 
 # =====================================================================
 # TAB 2: COLLECTIONS & REVENUE
+# =====================================================================
+# This tab focuses on the financial health of the revenue cycle:
+#   - Revenue Waterfall: Shows how charges flow to net revenue (charges
+#     minus adjustments, denials, resulting in net collections)
+#   - Collection rate trends: GCR and NCR over time
+#   - Cost to Collect: How efficient is the billing operation?
+#   - Average reimbursement: Revenue per claim over time
 # =====================================================================
 with tab2:
     st.header("Collections & Revenue Analysis")
@@ -339,6 +445,16 @@ with tab2:
 
 # =====================================================================
 # TAB 3: CLAIMS & DENIALS
+# =====================================================================
+# This tab helps identify and fix billing process problems:
+#   - Clean Claim Rate: Are we submitting error-free claims?
+#   - Denial Rate & Reasons: Why are claims being rejected?
+#   - First-Pass Rate: Are claims being paid on first submission?
+#   - Charge Lag: How quickly are services being billed?
+#   - Appeal Success: Are we recovering revenue from denied claims?
+#
+# The denial reasons bar chart is the most actionable visualization —
+# it shows exactly where to focus process improvement efforts.
 # =====================================================================
 with tab3:
     st.header("Claims & Denials Analysis")
@@ -434,6 +550,14 @@ with tab3:
 # =====================================================================
 # TAB 4: A/R AGING & CASH FLOW
 # =====================================================================
+# This tab monitors cash flow and the age of unpaid balances:
+#   - A/R Aging Buckets: How old are unpaid balances? (0-30, 31-60,
+#     61-90, 91-120, 120+ days). Older = harder to collect.
+#   - Days in A/R Trend: Dual-axis chart showing A/R balance (bars)
+#     and DAR metric (line) over time.
+#   - Monthly Cash Flow: Charges vs. payments per month, with net
+#     cash flow line showing whether the practice is cash-positive.
+# =====================================================================
 with tab4:
     st.header("Accounts Receivable Aging & Cash Flow")
 
@@ -526,6 +650,16 @@ with tab4:
 # =====================================================================
 # TAB 5: PAYER ANALYSIS
 # =====================================================================
+# This tab compares performance across insurance companies:
+#   - Revenue by Payer: Which payers generate the most revenue?
+#   - Payer Mix: Volume distribution across payers (pie chart)
+#   - Collection Rate by Payer: Which payers pay best/worst?
+#   - Denial Rate by Payer: Which payers deny most frequently?
+#   - Payer Comparison Table: Side-by-side metrics for all payers
+#
+# This data is critical for payer contract negotiations and for
+# prioritizing follow-up on underpaying or high-denial payers.
+# =====================================================================
 with tab5:
     st.header("Payer Performance Analysis")
 
@@ -599,6 +733,16 @@ with tab5:
 # =====================================================================
 # TAB 6: DEPARTMENT PERFORMANCE
 # =====================================================================
+# This tab breaks down revenue cycle performance by clinical department:
+#   - Revenue by Department: Charges vs. payments for each dept
+#   - Collection Rate: Which departments collect most effectively?
+#   - Encounter Volume: How busy is each department?
+#   - Avg Payment per Encounter: Revenue intensity by department
+#   - Encounter Type Mix: Distribution of visit types per department
+#
+# This helps administrators identify departments that may need
+# additional coding support, billing staff, or process improvement.
+# =====================================================================
 with tab6:
     st.header("Department Performance")
 
@@ -662,7 +806,9 @@ with tab6:
     st.dataframe(dept_table, hide_index=True, use_container_width=True)
 
 
-# ── Footer ───────────────────────────────────────────────────────────
+# ── Sidebar Footer ───────────────────────────────────────────────────
+# Show a summary of the filtered data volume in the sidebar so users
+# always know how much data they're looking at.
 st.sidebar.divider()
 st.sidebar.markdown("### Data Summary")
 st.sidebar.markdown(f"- **Patients:** {len(data['patients']):,}")

@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 .streamlit/
+# SQLite database is generated from CSVs — no need to track in git
+*.db

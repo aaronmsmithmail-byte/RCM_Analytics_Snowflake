@@ -1,6 +1,46 @@
 """
-Generate realistic sample data for Healthcare RCM Analytics.
-Creates 10 CSV files representing common revenue cycle data sources.
+Sample Data Generator for Healthcare RCM Analytics
+====================================================
+
+This script generates realistic synthetic data that simulates the data sources
+found in a real hospital or medical practice billing system. It creates 10 CSV
+files that mirror the output of common healthcare IT systems:
+
+    Source System Simulation:
+    ────────────────────────────────────────────────────────────────────
+    CSV File              Real-World Source System
+    ────────────────────────────────────────────────────────────────────
+    payers.csv            Payer/Insurance Master File (contract management)
+    patients.csv          Patient Registration / EHR demographics
+    providers.csv         Provider Credentialing / HR system
+    encounters.csv        EHR Scheduling + Admission/Discharge/Transfer (ADT)
+    charges.csv           Charge Capture / Charge Description Master (CDM)
+    claims.csv            Claims Management / Clearinghouse
+    payments.csv          Payment Posting / ERA (Electronic Remittance Advice)
+    denials.csv           Denial Management / Worklist system
+    adjustments.csv       Adjustment/Write-off Posting (part of billing system)
+    operating_costs.csv   Finance/Accounting (GL cost center reports)
+    ────────────────────────────────────────────────────────────────────
+
+Data Relationships (Entity-Relationship model):
+    Payers ──< Patients ──< Encounters ──< Charges
+                              │
+                              └──< Claims ──< Payments
+                                     │
+                                     ├──< Denials
+                                     └──< Adjustments
+
+    (──< means "one to many")
+
+Running This Script:
+    python generate_sample_data.py
+
+    This will create/overwrite all 10 CSV files in the ./data/ directory.
+    After generating CSVs, run `python -m src.database` to load them into SQLite.
+
+Reproducibility:
+    We use random.seed(42) so the same data is generated every time.
+    Change the seed or remove it for different random data.
 """
 
 import csv
@@ -8,34 +48,82 @@ import random
 import os
 from datetime import datetime, timedelta
 
+# ---------------------------------------------------------------------------
+# Seed the random number generator for reproducible output.
+# Using seed(42) means running this script twice produces identical CSVs.
+# This is important for testing — you can verify metrics against known values.
+# ---------------------------------------------------------------------------
 random.seed(42)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# --- Constants ---
-NUM_PATIENTS = 500
-NUM_PROVIDERS = 25
-NUM_ENCOUNTERS = 3000
-NUM_CLAIMS = 2800
-NUM_PAYMENTS = 2200
-NUM_DENIALS = 420
-NUM_ADJUSTMENTS = 600
+# ===========================================================================
+# Volume Constants
+# ===========================================================================
+# These control how much data is generated. The values below simulate a
+# mid-sized medical practice over a 2-year period. You can increase these
+# to stress-test the SQLite database and dashboard performance.
+#
+# Relationships between volumes:
+#   - Not every encounter becomes a claim (some are self-pay or unbilled)
+#   - Not every claim gets a payment (some are denied or pending)
+#   - Denials are a subset of claims (typically 5-15%)
+#   - Adjustments apply to a subset of claims
+# ===========================================================================
+NUM_PATIENTS = 500          # Unique patients in the system
+NUM_PROVIDERS = 25          # Physicians/clinicians on staff
+NUM_ENCOUNTERS = 3000       # Total patient visits over 2 years
+NUM_CLAIMS = 2800           # ~93% of encounters generate a claim
+NUM_PAYMENTS = 2200         # Base count (actual count varies by claim status)
+NUM_DENIALS = 420           # ~15% of claims get denied
+NUM_ADJUSTMENTS = 600       # ~21% of claims have adjustments
 
+# Date range for generated data (2 full calendar years)
 START_DATE = datetime(2024, 1, 1)
 END_DATE = datetime(2025, 12, 31)
 
+# ===========================================================================
+# Payer (Insurance) Reference Data
+# ===========================================================================
+# These represent the most common insurance payers in the US healthcare system.
+# The mix includes:
+#   - Commercial payers (private insurance): BCBS, Aetna, Cigna, UHC, Humana, Kaiser
+#   - Government payers: Medicare (age 65+), Medicaid (low-income), Tricare (military)
+#   - Self-Pay: Uninsured patients paying out of pocket
+# ===========================================================================
 PAYER_NAMES = [
     "Blue Cross Blue Shield", "Aetna", "Cigna", "UnitedHealthcare",
     "Humana", "Medicare", "Medicaid", "Tricare", "Self-Pay", "Kaiser Permanente"
 ]
 PAYER_IDS = [f"PYR{str(i+1).zfill(3)}" for i in range(len(PAYER_NAMES))]
 
+# ===========================================================================
+# Clinical Departments
+# ===========================================================================
+# These represent the main service lines in a multi-specialty medical group.
+# Each department has different charge profiles and payer mixes.
+# ===========================================================================
 DEPARTMENTS = [
     "Cardiology", "Orthopedics", "Internal Medicine", "Emergency",
     "Pediatrics", "Neurology", "Oncology", "Radiology", "General Surgery", "Family Medicine"
 ]
 
+# ===========================================================================
+# CPT Codes (Current Procedural Terminology)
+# ===========================================================================
+# CPT codes are the standard coding system used to describe medical procedures
+# and services. Each code maps to a specific service with a standard charge.
+# Format: (code, description, base_charge_amount)
+#
+# The codes below represent a realistic mix of:
+#   - Evaluation & Management (E/M) visits: 99203-99285 (most common)
+#   - Diagnostic tests: 93000 (ECG), 71046 (X-ray), 80053/85025 (lab)
+#   - Procedures: 36415 (blood draw), 10060 (I&D)
+#   - Surgeries: 27447 (knee replacement), 29881 (arthroscopy)
+#   - Imaging: 70553 (MRI)
+#   - Endoscopy: 43239 (upper GI)
+# ===========================================================================
 CPT_CODES = [
     ("99213", "Office Visit - Est. Patient, Level 3", 150.00),
     ("99214", "Office Visit - Est. Patient, Level 4", 210.00),
@@ -59,12 +147,45 @@ CPT_CODES = [
     ("10060", "I&D Abscess", 350.00),
 ]
 
+# ===========================================================================
+# ICD-10 Diagnosis Codes
+# ===========================================================================
+# ICD-10-CM codes identify the medical reason (diagnosis) for a service.
+# Every claim must have at least one diagnosis code to justify medical necessity.
+# These represent common outpatient diagnoses:
+#   I10    = Essential hypertension (high blood pressure)
+#   E11.9  = Type 2 diabetes mellitus
+#   J06.9  = Upper respiratory infection
+#   M54.5  = Low back pain
+#   Z00.00 = General adult medical exam (wellness visit)
+#   J18.9  = Pneumonia
+#   K21.0  = GERD (acid reflux)
+#   E78.5  = Hyperlipidemia (high cholesterol)
+#   N39.0  = Urinary tract infection
+#   M79.3  = Panniculitis
+#   R10.9  = Abdominal pain
+#   G43.909 = Migraine
+#   J45.20 = Mild persistent asthma
+#   F41.1  = Generalized anxiety disorder
+#   I25.10 = Coronary artery disease
+#   E03.9  = Hypothyroidism
+#   M17.11 = Primary osteoarthritis, right knee
+#   K80.20 = Gallstones
+#   D64.9  = Anemia
+#   L03.90 = Cellulitis
+# ===========================================================================
 ICD10_CODES = [
     "I10", "E11.9", "J06.9", "M54.5", "Z00.00", "J18.9", "K21.0",
     "E78.5", "N39.0", "M79.3", "R10.9", "G43.909", "J45.20",
     "F41.1", "I25.10", "E03.9", "M17.11", "K80.20", "D64.9", "L03.90"
 ]
 
+# ===========================================================================
+# Denial Reason Codes
+# ===========================================================================
+# These represent the most common reasons insurance companies deny claims.
+# Understanding denial patterns is critical for process improvement.
+# ===========================================================================
 DENIAL_REASONS = [
     ("AUTH", "Prior Authorization Required"),
     ("DUP", "Duplicate Claim"),
@@ -78,6 +199,22 @@ DENIAL_REASONS = [
     ("BUNDLE", "Bundling/Unbundling Issue"),
 ]
 
+# ===========================================================================
+# Adjustment Types
+# ===========================================================================
+# Adjustments reduce the amount owed on a claim. They represent the gap
+# between what was billed and what can actually be collected.
+#   CONTRACTUAL: The biggest category — the negotiated discount between the
+#                provider and the payer (e.g., billed $200, contract says $140,
+#                so $60 is a contractual adjustment).
+#   WRITEOFF:    Bad debt — patient balance deemed uncollectable after
+#                collection efforts.
+#   CHARITY:     Services provided free to qualifying low-income patients.
+#   ADMIN:       Corrections for billing errors (e.g., duplicate charge removal).
+#   PROMPT_PAY:  Discount offered for early payment (sometimes for self-pay).
+#   SMALL_BAL:   Balances too small to justify the cost of collection
+#                (e.g., writing off a $3.50 balance).
+# ===========================================================================
 ADJUSTMENT_TYPES = [
     ("CONTRACTUAL", "Contractual Adjustment"),
     ("WRITEOFF", "Bad Debt Write-Off"),
@@ -114,11 +251,13 @@ PROVIDER_NAMES = [
 
 
 def rand_date(start=START_DATE, end=END_DATE):
+    """Generate a random date between start and end (inclusive)."""
     delta = (end - start).days
     return start + timedelta(days=random.randint(0, delta))
 
 
 def write_csv(filename, headers, rows):
+    """Write a list of rows to a CSV file in the data directory."""
     path = os.path.join(DATA_DIR, filename)
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
@@ -127,8 +266,28 @@ def write_csv(filename, headers, rows):
     print(f"  Created {path} ({len(rows)} rows)")
 
 
+# =========================================================================
+# DATA GENERATION FUNCTIONS
+# =========================================================================
+# Each function below generates one CSV file. They are called in order
+# because later tables depend on IDs from earlier tables (e.g., claims
+# need encounter_ids, payments need claim_ids).
+# =========================================================================
+
 # ---- 1. PAYERS ----
 def generate_payers():
+    """
+    Generate the payers (insurance companies) reference table.
+
+    Simulates: Payer Master File / Contract Management System
+
+    In a real hospital, this data comes from the managed care/contracting
+    department. Each payer has a negotiated contract that defines:
+    - Fee schedules (how much they pay for each CPT code)
+    - Timely filing limits (how long you have to submit a claim)
+    - Prior authorization requirements
+    - Appeal processes and deadlines
+    """
     rows = []
     for i, (pid, name) in enumerate(zip(PAYER_IDS, PAYER_NAMES)):
         payer_type = "Government" if name in ("Medicare", "Medicaid", "Tricare") else (
@@ -144,6 +303,15 @@ def generate_payers():
 
 # ---- 2. PATIENTS ----
 def generate_patients():
+    """
+    Generate patient demographics and insurance information.
+
+    Simulates: Patient Registration / EHR Master Patient Index (MPI)
+
+    In a real hospital, this data is collected at registration (front desk)
+    and includes insurance verification. Accurate patient data is critical
+    because errors here cascade into claim denials downstream.
+    """
     rows = []
     for i in range(NUM_PATIENTS):
         pid = f"PAT{str(i+1).zfill(5)}"
@@ -163,6 +331,14 @@ def generate_patients():
 
 # ---- 3. PROVIDERS ----
 def generate_providers():
+    """
+    Generate provider (physician/clinician) reference data.
+
+    Simulates: Provider Credentialing / HR System
+
+    Each provider has an NPI (National Provider Identifier), a unique 10-digit
+    number assigned by CMS. The NPI is required on every claim submission.
+    """
     rows = []
     for i in range(NUM_PROVIDERS):
         prov_id = f"PROV{str(i+1).zfill(3)}"
@@ -177,6 +353,20 @@ def generate_providers():
 
 # ---- 4. ENCOUNTERS ----
 def generate_encounters(patients, providers):
+    """
+    Generate patient encounters (visits).
+
+    Simulates: EHR Scheduling + ADT (Admission/Discharge/Transfer) system
+
+    An encounter is the fundamental unit of the revenue cycle — it represents
+    one patient interaction that will eventually generate charges, a claim,
+    and (hopefully) a payment. The encounter type distribution reflects a
+    typical multi-specialty practice:
+        - Outpatient (50%): Scheduled office visits
+        - Emergency (20%):  ED visits
+        - Inpatient (15%):  Hospital admissions (have a discharge date)
+        - Telehealth (15%): Virtual visits (growing post-COVID)
+    """
     rows = []
     for i in range(NUM_ENCOUNTERS):
         enc_id = f"ENC{str(i+1).zfill(6)}"
@@ -200,6 +390,23 @@ def generate_encounters(patients, providers):
 
 # ---- 5. CHARGES ----
 def generate_charges(encounters):
+    """
+    Generate charge line items for each encounter.
+
+    Simulates: Charge Capture / Charge Description Master (CDM)
+
+    Each encounter generates 1-4 charges (weighted toward 1-2). For example,
+    a typical office visit might generate:
+        - 99214 (Office visit, Level 4):           $210
+        - 85025 (Complete Blood Count):              $45
+        - 36415 (Venipuncture/blood draw):           $25
+        Total charges: $280
+
+    Charge lag (post_date - service_date) is the delay between the service
+    and when it appears in the billing system. Most are posted within 0-2
+    days, but some take up to 30 days (e.g., complex surgical encounters
+    waiting for operative notes and coding).
+    """
     rows = []
     charge_id = 1
     for enc in encounters:
@@ -227,6 +434,31 @@ def generate_charges(encounters):
 
 # ---- 6. CLAIMS ----
 def generate_claims(encounters, patients):
+    """
+    Generate insurance claims.
+
+    Simulates: Claims Management System / Clearinghouse
+
+    A claim is a formal request for payment sent to an insurance payer.
+    The claim lifecycle:
+        1. Provider renders service (encounter)
+        2. Charges are captured and coded (charges)
+        3. Claim is generated and scrubbed for errors
+        4. Claim is submitted electronically via a clearinghouse
+        5. Payer adjudicates: Paid / Denied / Partially Paid / Pending
+
+    Submission lag (days from service to submission) varies:
+        - Same day to 3 days: Well-run practices (50% of claims)
+        - 5-14 days: Typical (25% of claims)
+        - 15-45 days: Delayed, often due to missing documentation (25%)
+
+    Status distribution (realistic for a well-run practice):
+        - Paid (68%):           Claim accepted and fully paid
+        - Partially Paid (12%): Payer paid less than billed
+        - Denied (8%):          Claim rejected entirely
+        - Pending (8%):         Still being processed by payer
+        - Appealed (4%):        Initially denied, appeal filed
+    """
     rows = []
     pat_payer = {p[0]: p[5] for p in patients}
     enc_subset = random.sample(encounters, min(NUM_CLAIMS, len(encounters)))
@@ -256,6 +488,26 @@ def generate_claims(encounters, patients):
 
 # ---- 7. PAYMENTS / REMITTANCES ----
 def generate_payments(claims):
+    """
+    Generate payment/remittance records.
+
+    Simulates: Payment Posting / Electronic Remittance Advice (ERA/835)
+
+    When a payer processes a claim, they send:
+        - An ERA (Electronic Remittance Advice, ANSI 835 transaction) explaining
+          what was paid, denied, and adjusted
+        - An EFT (Electronic Funds Transfer), check, or virtual card payment
+
+    A single claim can have multiple payments:
+        1. Payer pays their portion (e.g., 80% of allowed amount)
+        2. Patient pays their responsibility (copay, coinsurance, deductible)
+
+    Payment lag (days from submission to payment) typically ranges from
+    14-90 days, depending on the payer and claim complexity.
+
+    We also track payment accuracy — whether the payer paid the correct
+    amount per their contract. ~8% of payments have inaccuracies.
+    """
     rows = []
     payment_id = 1
     for claim in claims:
@@ -303,6 +555,27 @@ def generate_payments(claims):
 
 # ---- 8. DENIALS ----
 def generate_denials(claims):
+    """
+    Generate claim denial records.
+
+    Simulates: Denial Management / Payer Correspondence
+
+    When a payer denies a claim, they send a denial reason code explaining why.
+    The provider can then:
+        - Correct and resubmit (if it was a billing error)
+        - File an appeal with supporting documentation
+        - Write off the balance (if the denial is valid)
+
+    Appeal outcomes:
+        - Not Appealed (50%):  Staff determined the denial was valid
+        - Won (15%):           Appeal overturned the denial, payment received
+        - Lost (20%):          Appeal upheld the denial
+        - In Progress (15%):   Appeal filed, awaiting payer response
+
+    Denials come from:
+        - Claims with status "Denied" or "Appealed"
+        - Some "Partially Paid" claims (partial denials)
+    """
     rows = []
     denied_claims = [c for c in claims if c[7] in ("Denied", "Appealed")]
     # Also add some denials for partially paid claims
@@ -339,6 +612,20 @@ def generate_denials(claims):
 
 # ---- 9. ADJUSTMENTS ----
 def generate_adjustments(claims):
+    """
+    Generate financial adjustments.
+
+    Simulates: Adjustment/Write-off Posting in the billing system
+
+    Adjustments represent the difference between what was billed and what
+    can actually be collected. Distribution of adjustment types:
+        - Contractual (45%): The largest category — negotiated payer discounts
+        - Write-off (20%):   Bad debt — uncollectable patient balances
+        - Admin (15%):       Corrections, billing errors
+        - Prompt Pay (10%):  Early payment discounts
+        - Charity (5%):      Free care for qualifying patients
+        - Small Balance (5%): Balances too small to pursue
+    """
     rows = []
     adj_claims = random.sample(claims, min(NUM_ADJUSTMENTS, len(claims)))
     for i, claim in enumerate(adj_claims):
@@ -360,6 +647,20 @@ def generate_adjustments(claims):
 
 # ---- 10. OPERATING COSTS (for Cost to Collect) ----
 def generate_operating_costs():
+    """
+    Generate monthly RCM department operating costs.
+
+    Simulates: Finance/Accounting General Ledger (GL) reports
+
+    This data feeds the "Cost to Collect" KPI. It represents the total
+    cost of running the billing/revenue cycle operation:
+        - Billing staff salaries:  $35K-55K/month (largest cost)
+        - Software costs:          $5K-12K/month (EHR, billing, clearinghouse)
+        - Outsourcing costs:       $2K-8K/month (third-party billing services)
+        - Supplies/overhead:       $1K-3K/month (printing, postage, office)
+
+    The industry benchmark for cost to collect is 3-8% of total collections.
+    """
     rows = []
     months = []
     d = START_DATE
@@ -383,9 +684,25 @@ def generate_operating_costs():
     return rows
 
 
-# ---- MAIN ----
+# ===========================================================================
+# MAIN ENTRY POINT
+# ===========================================================================
+# The generation order matters because of data dependencies:
+#   1. Payers (no dependencies)
+#   2. Patients (references payers)
+#   3. Providers (no dependencies)
+#   4. Encounters (references patients + providers)
+#   5. Charges (references encounters)
+#   6. Claims (references encounters + patients)
+#   7. Payments (references claims)
+#   8. Denials (references claims)
+#   9. Adjustments (references claims)
+#   10. Operating Costs (standalone)
+# ===========================================================================
 if __name__ == "__main__":
-    print("Generating Healthcare RCM sample data...")
+    print("=" * 60)
+    print("Healthcare RCM Analytics - Sample Data Generator")
+    print("=" * 60)
     print()
     payers = generate_payers()
     patients = generate_patients()
@@ -398,4 +715,7 @@ if __name__ == "__main__":
     adjustments = generate_adjustments(claims)
     operating_costs = generate_operating_costs()
     print()
-    print("Done! All sample data files created in ./data/")
+    print("=" * 60)
+    print("Done! All 10 CSV files created in ./data/")
+    print("Next step: Run 'python -m src.database' to load into SQLite.")
+    print("=" * 60)
