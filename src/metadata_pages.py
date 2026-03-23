@@ -288,100 +288,266 @@ def render_data_catalog():
 # ── Page 2: Data Lineage ──────────────────────────────────────────────
 
 def render_data_lineage():
-    """DAG showing the full data pipeline from CSV files to dashboard visualizations."""
-    st.title("Data Lineage")
-    st.caption("End-to-end pipeline from raw CSV files through to dashboard metrics.")
+    """Medallion Architecture data lineage from CSV sources to the dashboard."""
+    st.title("Data Lineage — Medallion Architecture")
+    st.caption(
+        "Three-layer medallion pipeline: "
+        "**Bronze** (raw ingestion) → **Silver** (clean & typed) → "
+        "**Gold** (pre-aggregated KPI views) → Dashboard."
+    )
 
-    # Layer x-positions
-    LX = {0: 0.5, 1: 2.5, 2: 4.5, 3: 6.5, 4: 8.5, 5: 10.5}
-
-    # Source CSV nodes
-    sources = [
-        "adjustments.csv", "charges.csv", "claims.csv", "denials.csv",
-        "encounters.csv", "operating_costs.csv", "patients.csv",
-        "payers.csv", "payments.csv", "providers.csv",
+    # ── Layout constants ───────────────────────────────────────────────
+    TABLE_ORDER = [
+        "payers", "patients", "providers", "encounters", "charges",
+        "claims", "payments", "denials", "adjustments", "operating_costs",
     ]
+    Y_STEP = 1.25
+    tbl_y = {t: i * Y_STEP for i, t in enumerate(TABLE_ORDER)}
+
+    X_CSV, X_BRONZE, X_SILVER, X_GOLD, X_DASH = 0.7, 2.8, 5.2, 7.5, 9.5
+    Y_TOP = tbl_y["operating_costs"] + Y_STEP * 0.8
+
+    GOLD_VIEWS = [
+        ("gold_monthly_kpis",    "gold_monthly_kpis",       tbl_y["patients"],           "Monthly KPIs: GCR, denial rate, clean claim rate by month"),
+        ("gold_payer_perf",      "gold_payer_performance",  tbl_y["encounters"],          "Per-payer: denial rate, collection rate, total revenue"),
+        ("gold_dept_perf",       "gold_dept_performance",   tbl_y["claims"],              "Per-dept: encounter count, charges, payments, rev/encounter"),
+        ("gold_ar_aging",        "gold_ar_aging",           tbl_y["denials"],             "Open claims bucketed: 0-30, 31-60, 61-90, 91-120, 120+ days"),
+        ("gold_denial_analysis", "gold_denial_analysis",    tbl_y["operating_costs"],    "Denial codes: count, denied $, recovered $, appeal win rate"),
+    ]
+    DASH_TABS = [
+        ("tab_exec",   "Executive\nSummary",      tbl_y["payers"]),
+        ("tab_rev",    "Collections &\nRevenue",  tbl_y["providers"]),
+        ("tab_claims", "Claims &\nDenials",       tbl_y["charges"]),
+        ("tab_ar",     "A/R Aging &\nCash Flow",  tbl_y["payments"]),
+        ("tab_payer",  "Payer\nAnalysis",          tbl_y["adjustments"]),
+        ("tab_dept",   "Department\nPerf.",        tbl_y["operating_costs"]),
+    ]
+
+    # ── Accumulate nodes and edges ─────────────────────────────────────
     nodes = []
-    for i, s in enumerate(sources):
-        nodes.append({
-            "id": s, "label": s, "x": LX[0],
-            "y": i * 1.1,
-            "color": "#5b8dee", "size": 18, "group": "CSV Source",
-            "hover": f"Source file: data/{s}",
-        })
-
-    # Storage layer
-    nodes.append({"id": "sqlite", "label": "SQLite DB\n(src/database.py)", "x": LX[1], "y": 4.9,
-                  "color": "#e8a838", "size": 30, "group": "Storage", "hover": "SQLite database via src/database.py"})
-
-    # Load layer
-    nodes.append({"id": "loader", "label": "data_loader.py\nload_all_data()", "x": LX[2], "y": 4.9,
-                  "color": "#38c172", "size": 28, "group": "Load", "hover": "Loads all 10 tables into DataFrames with date/bool parsing"})
-
-    # Validation layer
-    nodes.append({"id": "validator", "label": "validators.py\nvalidate_all()", "x": LX[3], "y": 4.9,
-                  "color": "#e3342f", "size": 28, "group": "Validate", "hover": "17 integrity checks across all tables"})
-
-    # Metrics layer (grouped)
-    metric_groups = [
-        ("Financial KPIs", "DAR, NCR, GCR, Cost-to-Collect, Bad Debt, Avg Reimb", 2.2),
-        ("Claims KPIs", "Clean Claim Rate, Denial Rate, First-Pass, Charge Lag", 4.4),
-        ("Recovery KPIs", "Appeal Success, A/R Aging, Payment Accuracy", 6.6),
-        ("Segment KPIs", "Payer Mix, Denial by Payer, Dept Performance", 8.8),
-    ]
-    for mid, label, y in metric_groups:
-        nodes.append({"id": mid, "label": label.split(",")[0] + "\n(metrics.py)", "x": LX[4], "y": y,
-                      "color": "#9561e2", "size": 26, "group": "Metrics", "hover": label})
-
-    # Presentation layer
-    tabs = [
-        ("tab_exec", "Executive\nSummary", 1.5),
-        ("tab_rev", "Collections &\nRevenue", 3.5),
-        ("tab_claims", "Claims &\nDenials", 5.5),
-        ("tab_ar", "A/R Aging &\nCash Flow", 7.5),
-        ("tab_payer", "Payer\nAnalysis", 9.0),
-        ("tab_dept", "Department\nPerf.", 10.5),
-    ]
-    for tid, label, y in tabs:
-        nodes.append({"id": tid, "label": label, "x": LX[5], "y": y,
-                      "color": "#f66d9b", "size": 24, "group": "Dashboard Tab", "hover": f"Dashboard tab: {label.replace(chr(10), ' ')}"})
-
     edges = []
-    # CSV → SQLite
-    for s in sources:
-        edges.append({"source": s, "target": "sqlite"})
-    # SQLite → loader
-    edges.append({"source": "sqlite", "target": "loader"})
-    # loader → validator
-    edges.append({"source": "loader", "target": "validator"})
-    # validator → metric groups
-    for mid, _, _ in metric_groups:
-        edges.append({"source": "validator", "target": mid})
-    # metric groups → tabs
-    edges += [
-        {"source": "Financial KPIs", "target": "tab_exec"},
-        {"source": "Financial KPIs", "target": "tab_rev"},
-        {"source": "Financial KPIs", "target": "tab_ar"},
-        {"source": "Claims KPIs", "target": "tab_exec"},
-        {"source": "Claims KPIs", "target": "tab_claims"},
-        {"source": "Recovery KPIs", "target": "tab_ar"},
-        {"source": "Recovery KPIs", "target": "tab_claims"},
-        {"source": "Segment KPIs", "target": "tab_payer"},
-        {"source": "Segment KPIs", "target": "tab_dept"},
+    npos  = {}  # node_id → (x, y) for edge drawing
+
+    def _n(nid, label, x, y, color, size, group, hover):
+        nodes.append(dict(id=nid, label=label, x=x, y=y,
+                          color=color, size=size, group=group, hover=hover))
+        npos[nid] = (x, y)
+
+    def _e(src, tgt):
+        edges.append((src, tgt))
+
+    # CSV source nodes
+    for t in TABLE_ORDER:
+        _n(f"csv_{t}", f"{t}.csv", X_CSV, tbl_y[t],
+           "#5b8dee", 11, "CSV Source", f"Source file: data/{t}.csv")
+
+    # Bronze table nodes
+    for t in TABLE_ORDER:
+        _n(f"bronze_{t}", f"bronze_{t}", X_BRONZE, tbl_y[t],
+           "#CD7F32", 14, "Bronze Table",
+           f"bronze_{t}: all TEXT columns + _loaded_at timestamp")
+
+    # Silver table nodes
+    for t in TABLE_ORDER:
+        _n(f"silver_{t}", f"silver_{t}", X_SILVER, tbl_y[t],
+           "#7a7a7a", 14, "Silver Table",
+           f"silver_{t}: typed columns (REAL/INTEGER), FK constraints enforced")
+
+    # Gold view nodes
+    for gid, glabel, gy, ghover in GOLD_VIEWS:
+        _n(gid, glabel, X_GOLD, gy, "#DAA520", 20, "Gold View", ghover)
+
+    # Dashboard tab nodes
+    for tid, tlabel, ty in DASH_TABS:
+        _n(tid, tlabel, X_DASH, ty, "#f66d9b", 17, "Dashboard Tab",
+           f"Dashboard tab: {tlabel.replace(chr(10), ' ')}")
+
+    # CSV → Bronze edges (raw ingestion)
+    for t in TABLE_ORDER:
+        _e(f"csv_{t}", f"bronze_{t}")
+
+    # Bronze → Silver edges (ETL: type casting & validation)
+    for t in TABLE_ORDER:
+        _e(f"bronze_{t}", f"silver_{t}")
+
+    # Silver → Gold edges (SQL aggregation, representative joins)
+    for src, tgt in [
+        ("silver_claims",     "gold_monthly_kpis"),
+        ("silver_payments",   "gold_monthly_kpis"),
+        ("silver_payers",     "gold_payer_perf"),
+        ("silver_claims",     "gold_payer_perf"),
+        ("silver_encounters", "gold_dept_perf"),
+        ("silver_charges",    "gold_dept_perf"),
+        ("silver_claims",     "gold_ar_aging"),
+        ("silver_denials",    "gold_denial_analysis"),
+    ]:
+        _e(src, tgt)
+
+    # Gold → Dashboard edges
+    for src, tgt in [
+        ("gold_monthly_kpis",    "tab_exec"),
+        ("gold_monthly_kpis",    "tab_rev"),
+        ("gold_payer_perf",      "tab_payer"),
+        ("gold_dept_perf",       "tab_dept"),
+        ("gold_ar_aging",        "tab_ar"),
+        ("gold_denial_analysis", "tab_claims"),
+    ]:
+        _e(src, tgt)
+
+    # ── Build Plotly figure ────────────────────────────────────────────
+    fig = go.Figure()
+
+    # Zone background rectangles
+    ZONE_Y0, ZONE_Y1 = -0.8, Y_TOP + 0.2
+    zone_defs = [
+        # x0,  x1,  fill,                          border,                        label,          tx,   color
+        (-0.3,  4.0, "rgba(205,127,50,0.07)",  "rgba(205,127,50,0.30)",  "BRONZE LAYER",  1.85, "#8B4513"),
+        ( 4.0,  6.8, "rgba(150,150,150,0.07)", "rgba(150,150,150,0.30)", "SILVER LAYER",  5.40, "#505050"),
+        ( 6.8, 10.8, "rgba(255,215,  0,0.07)", "rgba(218,165, 32,0.30)", "GOLD LAYER",    8.80, "#7B5900"),
     ]
+    for x0, x1, fill, border, zlabel, tx, tc in zone_defs:
+        fig.add_shape(
+            type="rect", x0=x0, y0=ZONE_Y0, x1=x1, y1=ZONE_Y1,
+            fillcolor=fill, line=dict(color=border, width=1.5), layer="below",
+        )
+        fig.add_annotation(
+            x=tx, y=Y_TOP + 0.1, text=f"<b>{zlabel}</b>",
+            showarrow=False, font=dict(size=12, color=tc), xanchor="center",
+        )
 
-    _draw_network_graph(nodes, edges, "Data Pipeline — End-to-End Lineage", height=650)
+    # ETL step label
+    fig.add_annotation(
+        x=(X_BRONZE + X_SILVER) / 2, y=Y_TOP - 0.1,
+        text="<i>ETL →</i>",
+        showarrow=False, font=dict(size=9, color="#888"),
+        bgcolor="rgba(255,255,255,0.8)",
+    )
 
-    # Pipeline summary table
-    st.subheader("Pipeline Stages")
+    # Draw edges
+    for src_id, tgt_id in edges:
+        sx, sy = npos[src_id]
+        tx, ty = npos[tgt_id]
+        fig.add_trace(go.Scatter(
+            x=[sx, tx, None], y=[sy, ty, None],
+            mode="lines",
+            line=dict(width=0.8, color="#c8c8c8"),
+            hoverinfo="none",
+            showlegend=False,
+        ))
+
+    # Draw nodes, grouped by layer for the legend
+    color_groups: dict = {}
+    for n in nodes:
+        color_groups.setdefault(n["group"], []).append(n)
+
+    for group, gnodes in color_groups.items():
+        fig.add_trace(go.Scatter(
+            x=[n["x"] for n in gnodes],
+            y=[n["y"] for n in gnodes],
+            mode="markers+text",
+            marker=dict(
+                size=[n["size"] for n in gnodes],
+                color=[n["color"] for n in gnodes],
+                line=dict(width=1, color="white"),
+            ),
+            text=[n["label"] for n in gnodes],
+            textposition="bottom center",
+            textfont=dict(size=7),
+            hovertext=[n.get("hover", n["label"]) for n in gnodes],
+            hoverinfo="text",
+            name=group,
+            showlegend=True,
+        ))
+
+    fig.update_layout(
+        title="Data Pipeline — Medallion Architecture (Bronze → Silver → Gold)",
+        height=800,
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
+                   range=[-0.6, 11.2]),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
+                   range=[-1.3, Y_TOP + 0.8]),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(l=20, r=20, t=55, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Medallion pipeline stages table ───────────────────────────────
+    st.subheader("Medallion Pipeline Stages")
     pipeline_table = [
-        {"Stage": "1. Source", "Component": "data/*.csv (10 files)", "Input": "—", "Output": "Raw CSV rows", "Description": "Original data files loaded once at startup"},
-        {"Stage": "2. Storage", "Component": "src/database.py", "Input": "CSV files", "Output": "SQLite tables", "Description": "Creates and populates a SQLite database from CSVs"},
-        {"Stage": "3. Load", "Component": "src/data_loader.py → load_all_data()", "Input": "SQLite tables", "Output": "Dict of DataFrames", "Description": "Reads all 10 tables; parses dates and booleans; cached by Streamlit"},
-        {"Stage": "4. Validate", "Component": "src/validators.py → validate_all()", "Input": "DataFrames", "Output": "Issue list", "Description": "17 integrity checks; issues shown in sidebar Data Quality expander"},
-        {"Stage": "5. Filter", "Component": "app.py sidebar widgets", "Input": "DataFrames", "Output": "Filtered DataFrames", "Description": "Date range, payer, department, encounter-type filters cascade from claims outward"},
-        {"Stage": "6. Metrics", "Component": "src/metrics.py (17 functions)", "Input": "Filtered DataFrames", "Output": "Scalar / Series results", "Description": "Each KPI function computes one metric from the filtered data"},
-        {"Stage": "7. Visualize", "Component": "app.py tabs 1–6", "Input": "Metric results", "Output": "Plotly charts, scorecards", "Description": "6 dashboard tabs render charts and KPI cards from metric outputs"},
+        {
+            "Layer":       "Source",
+            "Stage":       "1. CSV Ingest",
+            "Component":   "data/*.csv (10 files)",
+            "Input":       "—",
+            "Output":      "Raw CSV rows",
+            "Description": "Original source files; loaded once per database init.",
+        },
+        {
+            "Layer":       "Bronze",
+            "Stage":       "2. Raw Landing",
+            "Component":   "database.py → load_csv_to_bronze()",
+            "Input":       "CSV files",
+            "Output":      "bronze_* tables (all TEXT)",
+            "Description": "Data lands as-is. All columns TEXT. _loaded_at timestamp records ingestion time.",
+        },
+        {
+            "Layer":       "Silver",
+            "Stage":       "3. ETL Transform",
+            "Component":   "database.py → _etl_bronze_to_silver()",
+            "Input":       "bronze_* tables",
+            "Output":      "silver_* tables (typed)",
+            "Description": "CAST to REAL/INTEGER, normalise booleans ('True'→1), enforce FK constraints, skip NULL PKs.",
+        },
+        {
+            "Layer":       "Silver",
+            "Stage":       "4. Load to DataFrames",
+            "Component":   "data_loader.py → load_all_data()",
+            "Input":       "silver_* tables",
+            "Output":      "Dict of DataFrames",
+            "Description": "Reads all 10 Silver tables; parses dates and booleans; cached by Streamlit @st.cache_data.",
+        },
+        {
+            "Layer":       "Silver",
+            "Stage":       "5. Validate",
+            "Component":   "validators.py → validate_all()",
+            "Input":       "DataFrames",
+            "Output":      "Issue list",
+            "Description": "17 integrity checks on Silver DataFrames; issues shown in sidebar Data Quality expander.",
+        },
+        {
+            "Layer":       "Silver",
+            "Stage":       "6. Filter",
+            "Component":   "app.py sidebar widgets",
+            "Input":       "DataFrames",
+            "Output":      "Filtered DataFrames",
+            "Description": "Date range, payer, department, encounter-type filters applied in-memory on Silver data.",
+        },
+        {
+            "Layer":       "Gold",
+            "Stage":       "7. Gold Views",
+            "Component":   "database.py → gold_* SQL VIEWs (5 views)",
+            "Input":       "silver_* tables",
+            "Output":      "Pre-aggregated KPI tables",
+            "Description": "SQL VIEWs join & aggregate Silver tables by month, payer, dept, aging bucket, denial code.",
+        },
+        {
+            "Layer":       "Gold",
+            "Stage":       "8. KPI Metrics",
+            "Component":   "metrics.py (17 functions)",
+            "Input":       "Filtered Silver DataFrames",
+            "Output":      "Scalar / Series KPI results",
+            "Description": "Each KPI function computes one metric from the filtered Silver data.",
+        },
+        {
+            "Layer":       "Presentation",
+            "Stage":       "9. Visualize",
+            "Component":   "app.py tabs 1–6",
+            "Input":       "Metric results",
+            "Output":      "Plotly charts, KPI scorecards",
+            "Description": "6 dashboard tabs render charts and KPI cards from metric outputs.",
+        },
     ]
     st.dataframe(pd.DataFrame(pipeline_table), use_container_width=True, hide_index=True)
 

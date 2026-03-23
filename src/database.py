@@ -2,56 +2,49 @@
 Database Setup and Management for Healthcare RCM Analytics
 ==========================================================
 
-This module handles all SQLite database operations for the RCM Analytics application.
-SQLite was chosen because:
-    - It requires zero configuration (no separate server process).
-    - It stores the entire database in a single file, making it portable.
-    - It ships with Python's standard library (sqlite3 module).
-    - It handles millions of rows efficiently for local analytics.
-    - It supports full SQL, enabling complex joins and aggregations.
+This module implements a Medallion Architecture (Bronze → Silver → Gold) using SQLite
+as the storage engine for the RCM Analytics application.
 
-Architecture Overview:
-    1. The CSV files (in ./data/) serve as the raw "source of truth" input files.
-    2. This module reads those CSVs and loads them into a normalized SQLite database.
-    3. The Streamlit dashboard then queries SQLite instead of reading CSVs directly.
+Medallion Architecture Overview
+--------------------------------
+The medallion pattern organises data into three progressively refined layers:
 
-    This approach scales much better than CSV-based loading because:
-    - SQLite uses indexed B-trees for fast lookups (O(log n) vs O(n) for CSV scans).
-    - SQL queries push filtering/aggregation to the database engine.
-    - Adding new data is an INSERT rather than rewriting an entire CSV.
-    - Multiple processes can read the database concurrently.
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  BRONZE  │  Raw ingestion layer. Data lands here exactly as it arrived   │
+  │          │  from the source (CSV). All columns are TEXT. A _loaded_at    │
+  │          │  timestamp records when each batch was ingested.              │
+  ├──────────────────────────────────────────────────────────────────────────┤
+  │  SILVER  │  Cleaned & conformed layer. An ETL step casts columns to the  │
+  │          │  correct types (REAL for money, INTEGER for booleans),        │
+  │          │  enforces foreign-key constraints, and filters out bad rows.  │
+  ├──────────────────────────────────────────────────────────────────────────┤
+  │  GOLD    │  Aggregated, business-ready layer. SQL VIEWs pre-join and     │
+  │          │  aggregate Silver tables into the five key KPI domains used   │
+  │          │  by the dashboard.  Gold views are always current because     │
+  │          │  they are computed at query time against Silver.              │
+  └──────────────────────────────────────────────────────────────────────────┘
 
-Database Schema:
-    The schema mirrors the 10 CSV files, organized into the following tables:
+Data flow:
+    CSV files → bronze_* tables → (ETL) → silver_* tables → gold_* views → Dashboard
 
-    Reference Tables (relatively static):
-        - payers:           Insurance companies and self-pay (10 rows)
-        - patients:         Patient demographics and insurance info (500 rows)
-        - providers:        Physicians/clinicians and their departments (25 rows)
+Table naming convention:
+    bronze_payers, bronze_claims, ...   (10 bronze tables)
+    silver_payers, silver_claims, ...   (10 silver tables)
+    gold_monthly_kpis, gold_payer_performance, ... (5 gold views)
 
-    Transactional Tables (grow over time):
-        - encounters:       Patient visits (outpatient, inpatient, ED, telehealth)
-        - charges:          Individual CPT-level line items billed per encounter
-        - claims:           Insurance claim submissions (one per encounter)
-        - payments:         Payer and patient payment remittances
-        - denials:          Claim denial records with appeal tracking
-        - adjustments:      Contractual write-offs, bad debt, charity care
-
-    Operational Tables:
-        - operating_costs:  Monthly RCM department costs (for Cost-to-Collect KPI)
+Why SQLite?
+    - Zero configuration; single portable file.
+    - Ships with Python's standard library.
+    - Handles millions of rows for local analytics workloads.
+    - Full SQL support for joins, aggregations, and window functions.
 
 Usage:
-    # One-time setup: create database and load CSV data
+    # One-time / refresh setup
     python -m src.database
 
-    # Or programmatically:
+    # Programmatic
     from src.database import initialize_database
     initialize_database()
-
-    # Query data for the dashboard:
-    from src.database import get_connection
-    conn = get_connection()
-    df = pd.read_sql("SELECT * FROM claims WHERE claim_status = 'Denied'", conn)
 """
 
 import sqlite3
@@ -61,244 +54,522 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # Path Configuration
 # ---------------------------------------------------------------------------
-# The database file lives alongside the CSV data in the ./data/ directory.
-# This keeps all data artifacts in one place and makes the project portable.
-# ---------------------------------------------------------------------------
 _BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(_BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "rcm_analytics.db")
 
 
 # ===========================================================================
-# SQL Schema Definitions
+# BRONZE LAYER — Raw Ingestion Schema
 # ===========================================================================
-# Each CREATE TABLE statement includes:
-#   - A PRIMARY KEY for unique row identification
-#   - Appropriate data types (TEXT for IDs/strings, REAL for money, INTEGER for counts)
-#   - FOREIGN KEY constraints to enforce referential integrity between tables
-#
-# Note on money types: We use REAL (floating point) for dollar amounts.
-#   In a production system, you might use INTEGER cents to avoid floating-point
-#   rounding, but REAL is simpler and sufficient for analytics/reporting.
+# All columns are TEXT.  The _loaded_at column records ingestion time.
+# No foreign-key constraints.  Data is stored exactly as it arrived.
 # ===========================================================================
 
-SCHEMA_SQL = """
--- =========================================================================
--- REFERENCE TABLES
--- These tables contain relatively static lookup/dimension data.
--- =========================================================================
-
--- Payers: Insurance companies, government programs, and self-pay.
--- Each payer has a contract that defines expected reimbursement rates.
--- The avg_reimbursement_pct field represents the historical average
--- percentage of billed charges that this payer actually reimburses.
-CREATE TABLE IF NOT EXISTS payers (
-    payer_id                TEXT PRIMARY KEY,   -- Unique payer identifier (e.g., PYR001)
-    payer_name              TEXT NOT NULL,       -- Display name (e.g., "Blue Cross Blue Shield")
-    payer_type              TEXT NOT NULL,       -- Category: Commercial, Government, or Self-Pay
-    avg_reimbursement_pct   REAL,               -- Historical avg reimbursement as decimal (0.80 = 80%)
-    contract_id             TEXT                 -- Reference to the payer contract
+BRONZE_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS bronze_payers (
+    payer_id              TEXT,
+    payer_name            TEXT,
+    payer_type            TEXT,
+    avg_reimbursement_pct TEXT,
+    contract_id           TEXT,
+    _loaded_at            TEXT DEFAULT (datetime('now'))
 );
 
--- Patients: Demographics and primary insurance information.
--- In a real system, a patient could have multiple insurance plans
--- (primary, secondary, tertiary). We simplify to one primary payer here.
-CREATE TABLE IF NOT EXISTS patients (
-    patient_id       TEXT PRIMARY KEY,           -- Unique patient ID (e.g., PAT00001)
-    first_name       TEXT NOT NULL,
-    last_name        TEXT NOT NULL,
-    date_of_birth    TEXT,                       -- ISO format: YYYY-MM-DD
-    gender           TEXT,                       -- M or F
-    primary_payer_id TEXT,                       -- FK to payers table
-    member_id        TEXT,                       -- Insurance member/subscriber ID
-    zip_code         TEXT,                       -- Patient's ZIP code for geographic analysis
-    FOREIGN KEY (primary_payer_id) REFERENCES payers(payer_id)
+CREATE TABLE IF NOT EXISTS bronze_patients (
+    patient_id       TEXT,
+    first_name       TEXT,
+    last_name        TEXT,
+    date_of_birth    TEXT,
+    gender           TEXT,
+    primary_payer_id TEXT,
+    member_id        TEXT,
+    zip_code         TEXT,
+    _loaded_at       TEXT DEFAULT (datetime('now'))
 );
 
--- Providers: Physicians, nurse practitioners, and other clinicians.
--- NPI (National Provider Identifier) is a unique 10-digit number assigned
--- by CMS to every healthcare provider in the United States.
-CREATE TABLE IF NOT EXISTS providers (
-    provider_id    TEXT PRIMARY KEY,             -- Internal provider ID (e.g., PROV001)
-    provider_name  TEXT NOT NULL,                -- Full name (e.g., "Dr. Sarah Chen")
-    npi            TEXT,                         -- 10-digit National Provider Identifier
-    department     TEXT,                         -- Clinical department (e.g., "Cardiology")
-    specialty      TEXT                          -- Medical specialty
+CREATE TABLE IF NOT EXISTS bronze_providers (
+    provider_id   TEXT,
+    provider_name TEXT,
+    npi           TEXT,
+    department    TEXT,
+    specialty     TEXT,
+    _loaded_at    TEXT DEFAULT (datetime('now'))
 );
 
-
--- =========================================================================
--- TRANSACTIONAL TABLES
--- These tables grow continuously as the organization sees patients,
--- submits claims, and receives payments.
--- =========================================================================
-
--- Encounters: Each row represents one patient visit/interaction.
--- An encounter is the starting point of the revenue cycle:
---   Encounter -> Charges -> Claim -> Payment/Denial
-CREATE TABLE IF NOT EXISTS encounters (
-    encounter_id    TEXT PRIMARY KEY,            -- Unique encounter ID (e.g., ENC000001)
-    patient_id      TEXT NOT NULL,               -- FK to patients table
-    provider_id     TEXT NOT NULL,               -- FK to providers table
-    date_of_service TEXT NOT NULL,               -- When the service was provided (YYYY-MM-DD)
-    discharge_date  TEXT,                        -- When patient was discharged (same day for outpatient)
-    encounter_type  TEXT,                        -- Outpatient, Inpatient, Emergency, or Telehealth
-    department      TEXT,                        -- Department where service occurred
-    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
-    FOREIGN KEY (provider_id) REFERENCES providers(provider_id)
+CREATE TABLE IF NOT EXISTS bronze_encounters (
+    encounter_id   TEXT,
+    patient_id     TEXT,
+    provider_id    TEXT,
+    date_of_service TEXT,
+    discharge_date  TEXT,
+    encounter_type  TEXT,
+    department      TEXT,
+    _loaded_at      TEXT DEFAULT (datetime('now'))
 );
 
--- Charges: Individual billable line items for each encounter.
--- A single encounter may have multiple charges (e.g., an office visit +
--- a blood draw + a lab panel = 3 charges on one encounter).
--- CPT (Current Procedural Terminology) codes identify the service performed.
--- ICD-10 codes identify the diagnosis that justified the service.
-CREATE TABLE IF NOT EXISTS charges (
-    charge_id       TEXT PRIMARY KEY,            -- Unique charge ID (e.g., CHG0000001)
-    encounter_id    TEXT NOT NULL,               -- FK to encounters table
-    cpt_code        TEXT NOT NULL,               -- CPT procedure code (e.g., "99213")
-    cpt_description TEXT,                        -- Human-readable CPT description
-    units           INTEGER DEFAULT 1,           -- Number of units billed
-    charge_amount   REAL NOT NULL,               -- Dollar amount billed
-    service_date    TEXT NOT NULL,               -- Date the service was rendered
-    post_date       TEXT,                        -- Date the charge was posted to the billing system
-    icd10_code      TEXT,                        -- ICD-10 diagnosis code
-    FOREIGN KEY (encounter_id) REFERENCES encounters(encounter_id)
+CREATE TABLE IF NOT EXISTS bronze_charges (
+    charge_id       TEXT,
+    encounter_id    TEXT,
+    cpt_code        TEXT,
+    cpt_description TEXT,
+    units           TEXT,
+    charge_amount   TEXT,
+    service_date    TEXT,
+    post_date       TEXT,
+    icd10_code      TEXT,
+    _loaded_at      TEXT DEFAULT (datetime('now'))
 );
 
--- Claims: Insurance claim submissions. Typically one claim per encounter,
--- though complex encounters may generate multiple claims.
--- The claim lifecycle: Submitted -> Paid/Denied/Partially Paid/Pending/Appealed
-CREATE TABLE IF NOT EXISTS claims (
-    claim_id              TEXT PRIMARY KEY,      -- Unique claim ID (e.g., CLM0000001)
-    encounter_id          TEXT NOT NULL,         -- FK to encounters table
-    patient_id            TEXT NOT NULL,         -- FK to patients table
-    payer_id              TEXT NOT NULL,         -- FK to payers table (who we're billing)
-    date_of_service       TEXT NOT NULL,         -- Service date from the encounter
-    submission_date       TEXT NOT NULL,         -- When the claim was submitted to the payer
-    total_charge_amount   REAL NOT NULL,         -- Total billed amount on this claim
-    claim_status          TEXT NOT NULL,         -- Paid, Denied, Pending, Partially Paid, Appealed
-    is_clean_claim        INTEGER,               -- 1 = clean (no errors), 0 = had issues
-    submission_method     TEXT,                  -- Electronic or Paper
-    FOREIGN KEY (encounter_id) REFERENCES encounters(encounter_id),
-    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
-    FOREIGN KEY (payer_id) REFERENCES payers(payer_id)
+CREATE TABLE IF NOT EXISTS bronze_claims (
+    claim_id            TEXT,
+    encounter_id        TEXT,
+    patient_id          TEXT,
+    payer_id            TEXT,
+    date_of_service     TEXT,
+    submission_date     TEXT,
+    total_charge_amount TEXT,
+    claim_status        TEXT,
+    is_clean_claim      TEXT,
+    submission_method   TEXT,
+    _loaded_at          TEXT DEFAULT (datetime('now'))
 );
 
--- Payments: Remittance records from payers and patients.
--- A single claim can have multiple payments (e.g., payer pays 80%,
--- then patient pays the remaining 20% copay/coinsurance).
-CREATE TABLE IF NOT EXISTS payments (
-    payment_id          TEXT PRIMARY KEY,        -- Unique payment ID (e.g., PAY0000001)
-    claim_id            TEXT NOT NULL,           -- FK to claims table
-    payer_id            TEXT NOT NULL,           -- Who paid (payer ID or "PATIENT")
-    payment_amount      REAL NOT NULL,           -- Dollar amount received
-    allowed_amount      REAL,                    -- Payer's allowed/approved amount for the service
-    payment_date        TEXT NOT NULL,           -- Date payment was received
-    payment_method      TEXT,                    -- EFT, Check, Virtual Card, Credit Card, Cash, etc.
-    is_accurate_payment INTEGER,                 -- 1 = correct amount, 0 = over/underpayment
-    FOREIGN KEY (claim_id) REFERENCES claims(claim_id)
+CREATE TABLE IF NOT EXISTS bronze_payments (
+    payment_id          TEXT,
+    claim_id            TEXT,
+    payer_id            TEXT,
+    payment_amount      TEXT,
+    allowed_amount      TEXT,
+    payment_date        TEXT,
+    payment_method      TEXT,
+    is_accurate_payment TEXT,
+    _loaded_at          TEXT DEFAULT (datetime('now'))
 );
 
--- Denials: Records of claim denials and their appeal outcomes.
--- Denials are a major source of revenue leakage in healthcare.
--- Common reasons include: missing prior auth, coding errors, eligibility issues.
-CREATE TABLE IF NOT EXISTS denials (
-    denial_id                  TEXT PRIMARY KEY, -- Unique denial ID (e.g., DEN000001)
-    claim_id                   TEXT NOT NULL,    -- FK to claims table
-    denial_reason_code         TEXT NOT NULL,    -- Short code (e.g., "AUTH", "COD", "ELIG")
-    denial_reason_description  TEXT,             -- Human-readable reason
-    denial_date                TEXT NOT NULL,    -- When the denial was received
-    denied_amount              REAL NOT NULL,    -- Dollar amount denied
-    appeal_status              TEXT,             -- Not Appealed, Won, Lost, In Progress
-    appeal_date                TEXT,             -- When the appeal was filed (if applicable)
-    recovered_amount           REAL DEFAULT 0,   -- Amount recovered through successful appeal
-    FOREIGN KEY (claim_id) REFERENCES claims(claim_id)
+CREATE TABLE IF NOT EXISTS bronze_denials (
+    denial_id                 TEXT,
+    claim_id                  TEXT,
+    denial_reason_code        TEXT,
+    denial_reason_description TEXT,
+    denial_date               TEXT,
+    denied_amount             TEXT,
+    appeal_status             TEXT,
+    appeal_date               TEXT,
+    recovered_amount          TEXT,
+    _loaded_at                TEXT DEFAULT (datetime('now'))
 );
 
--- Adjustments: Financial adjustments applied to claims.
--- Types include:
---   CONTRACTUAL: Negotiated discount between provider and payer
---   WRITEOFF:    Bad debt written off as uncollectable
---   CHARITY:     Charity care provided at no cost to patient
---   ADMIN:       Administrative corrections
---   PROMPT_PAY:  Discount for early payment
---   SMALL_BAL:   Small balance write-off (not worth pursuing)
-CREATE TABLE IF NOT EXISTS adjustments (
-    adjustment_id               TEXT PRIMARY KEY,   -- Unique adjustment ID (e.g., ADJ000001)
-    claim_id                    TEXT NOT NULL,       -- FK to claims table
-    adjustment_type_code        TEXT NOT NULL,       -- Type code (e.g., "CONTRACTUAL")
-    adjustment_type_description TEXT,                -- Human-readable description
-    adjustment_amount           REAL NOT NULL,       -- Dollar amount adjusted
-    adjustment_date             TEXT NOT NULL,       -- When the adjustment was applied
-    FOREIGN KEY (claim_id) REFERENCES claims(claim_id)
+CREATE TABLE IF NOT EXISTS bronze_adjustments (
+    adjustment_id               TEXT,
+    claim_id                    TEXT,
+    adjustment_type_code        TEXT,
+    adjustment_type_description TEXT,
+    adjustment_amount           TEXT,
+    adjustment_date             TEXT,
+    _loaded_at                  TEXT DEFAULT (datetime('now'))
 );
 
-
--- =========================================================================
--- OPERATIONAL TABLES
--- Supporting data for operational KPIs.
--- =========================================================================
-
--- Operating Costs: Monthly cost breakdown for the RCM department.
--- Used to calculate the "Cost to Collect" KPI, which measures how many
--- cents it costs to collect each dollar of revenue.
--- Industry benchmark: 3-8% of collections.
-CREATE TABLE IF NOT EXISTS operating_costs (
-    period              TEXT PRIMARY KEY,        -- Month in YYYY-MM format
-    billing_staff_cost  REAL,                   -- Salaries for billing/coding staff
-    software_cost       REAL,                   -- EHR, billing software, clearinghouse fees
-    outsourcing_cost    REAL,                   -- Third-party billing service fees
-    supplies_overhead   REAL,                   -- Office supplies, postage, printing
-    total_rcm_cost      REAL NOT NULL           -- Sum of all cost categories
+CREATE TABLE IF NOT EXISTS bronze_operating_costs (
+    period             TEXT,
+    billing_staff_cost TEXT,
+    software_cost      TEXT,
+    outsourcing_cost   TEXT,
+    supplies_overhead  TEXT,
+    total_rcm_cost     TEXT,
+    _loaded_at         TEXT DEFAULT (datetime('now'))
 );
 """
 
+
 # ===========================================================================
-# Index Definitions
+# SILVER LAYER — Cleaned & Conformed Schema
 # ===========================================================================
-# Indexes speed up the most common query patterns in our dashboard.
-# Without indexes, the database would do full table scans for every filter.
-#
-# We index:
-#   - Foreign keys used in JOINs (claim_id, encounter_id, patient_id, payer_id)
-#   - Date columns used in WHERE clauses for date-range filtering
-#   - Status columns used in GROUP BY / WHERE for KPI calculations
+# Columns have proper types, FK constraints are enforced, and only valid rows
+# from bronze land here.  This is the primary layer consumed by the dashboard.
+# ===========================================================================
+
+SILVER_SCHEMA_SQL = """
+-- =========================================================================
+-- SILVER: Reference Tables
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS silver_payers (
+    payer_id                TEXT PRIMARY KEY,
+    payer_name              TEXT NOT NULL,
+    payer_type              TEXT NOT NULL,
+    avg_reimbursement_pct   REAL,
+    contract_id             TEXT
+);
+
+CREATE TABLE IF NOT EXISTS silver_patients (
+    patient_id       TEXT PRIMARY KEY,
+    first_name       TEXT NOT NULL,
+    last_name        TEXT NOT NULL,
+    date_of_birth    TEXT,
+    gender           TEXT,
+    primary_payer_id TEXT,
+    member_id        TEXT,
+    zip_code         TEXT,
+    FOREIGN KEY (primary_payer_id) REFERENCES silver_payers(payer_id)
+);
+
+CREATE TABLE IF NOT EXISTS silver_providers (
+    provider_id    TEXT PRIMARY KEY,
+    provider_name  TEXT NOT NULL,
+    npi            TEXT,
+    department     TEXT,
+    specialty      TEXT
+);
+
+-- =========================================================================
+-- SILVER: Transactional Tables
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS silver_encounters (
+    encounter_id    TEXT PRIMARY KEY,
+    patient_id      TEXT NOT NULL,
+    provider_id     TEXT NOT NULL,
+    date_of_service TEXT NOT NULL,
+    discharge_date  TEXT,
+    encounter_type  TEXT,
+    department      TEXT,
+    FOREIGN KEY (patient_id)  REFERENCES silver_patients(patient_id),
+    FOREIGN KEY (provider_id) REFERENCES silver_providers(provider_id)
+);
+
+CREATE TABLE IF NOT EXISTS silver_charges (
+    charge_id       TEXT PRIMARY KEY,
+    encounter_id    TEXT NOT NULL,
+    cpt_code        TEXT NOT NULL,
+    cpt_description TEXT,
+    units           INTEGER DEFAULT 1,
+    charge_amount   REAL NOT NULL,
+    service_date    TEXT NOT NULL,
+    post_date       TEXT,
+    icd10_code      TEXT,
+    FOREIGN KEY (encounter_id) REFERENCES silver_encounters(encounter_id)
+);
+
+CREATE TABLE IF NOT EXISTS silver_claims (
+    claim_id              TEXT PRIMARY KEY,
+    encounter_id          TEXT NOT NULL,
+    patient_id            TEXT NOT NULL,
+    payer_id              TEXT NOT NULL,
+    date_of_service       TEXT NOT NULL,
+    submission_date       TEXT NOT NULL,
+    total_charge_amount   REAL NOT NULL,
+    claim_status          TEXT NOT NULL,
+    is_clean_claim        INTEGER,
+    submission_method     TEXT,
+    FOREIGN KEY (encounter_id) REFERENCES silver_encounters(encounter_id),
+    FOREIGN KEY (patient_id)   REFERENCES silver_patients(patient_id),
+    FOREIGN KEY (payer_id)     REFERENCES silver_payers(payer_id)
+);
+
+CREATE TABLE IF NOT EXISTS silver_payments (
+    payment_id          TEXT PRIMARY KEY,
+    claim_id            TEXT NOT NULL,
+    payer_id            TEXT NOT NULL,
+    payment_amount      REAL NOT NULL,
+    allowed_amount      REAL,
+    payment_date        TEXT NOT NULL,
+    payment_method      TEXT,
+    is_accurate_payment INTEGER,
+    FOREIGN KEY (claim_id) REFERENCES silver_claims(claim_id)
+);
+
+CREATE TABLE IF NOT EXISTS silver_denials (
+    denial_id                  TEXT PRIMARY KEY,
+    claim_id                   TEXT NOT NULL,
+    denial_reason_code         TEXT NOT NULL,
+    denial_reason_description  TEXT,
+    denial_date                TEXT NOT NULL,
+    denied_amount              REAL NOT NULL,
+    appeal_status              TEXT,
+    appeal_date                TEXT,
+    recovered_amount           REAL DEFAULT 0,
+    FOREIGN KEY (claim_id) REFERENCES silver_claims(claim_id)
+);
+
+CREATE TABLE IF NOT EXISTS silver_adjustments (
+    adjustment_id               TEXT PRIMARY KEY,
+    claim_id                    TEXT NOT NULL,
+    adjustment_type_code        TEXT NOT NULL,
+    adjustment_type_description TEXT,
+    adjustment_amount           REAL NOT NULL,
+    adjustment_date             TEXT NOT NULL,
+    FOREIGN KEY (claim_id) REFERENCES silver_claims(claim_id)
+);
+
+-- =========================================================================
+-- SILVER: Operational Tables
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS silver_operating_costs (
+    period              TEXT PRIMARY KEY,
+    billing_staff_cost  REAL,
+    software_cost       REAL,
+    outsourcing_cost    REAL,
+    supplies_overhead   REAL,
+    total_rcm_cost      REAL NOT NULL
+);
+"""
+
+
+# ===========================================================================
+# BRONZE → SILVER ETL
+# ===========================================================================
+# Type-cast each bronze column to its silver equivalent.
+# Reference tables are inserted first to satisfy FK constraints.
+# Rows with NULL primary keys are excluded.
+# ===========================================================================
+
+BRONZE_TO_SILVER_SQL = """
+-- Reference tables first (no FK dependencies)
+INSERT OR REPLACE INTO silver_payers
+SELECT payer_id, payer_name, payer_type,
+       CAST(avg_reimbursement_pct AS REAL), contract_id
+FROM bronze_payers
+WHERE payer_id IS NOT NULL AND payer_id != '';
+
+INSERT OR REPLACE INTO silver_patients
+SELECT patient_id, first_name, last_name, date_of_birth, gender,
+       primary_payer_id, member_id, zip_code
+FROM bronze_patients
+WHERE patient_id IS NOT NULL AND patient_id != '';
+
+INSERT OR REPLACE INTO silver_providers
+SELECT provider_id, provider_name, npi, department, specialty
+FROM bronze_providers
+WHERE provider_id IS NOT NULL AND provider_id != '';
+
+-- Transactional tables (depend on reference tables above)
+INSERT OR REPLACE INTO silver_encounters
+SELECT encounter_id, patient_id, provider_id, date_of_service,
+       discharge_date, encounter_type, department
+FROM bronze_encounters
+WHERE encounter_id IS NOT NULL AND encounter_id != '';
+
+INSERT OR REPLACE INTO silver_charges
+SELECT charge_id, encounter_id, cpt_code, cpt_description,
+       CAST(units AS INTEGER),
+       CAST(charge_amount AS REAL),
+       service_date, post_date, icd10_code
+FROM bronze_charges
+WHERE charge_id IS NOT NULL AND charge_id != '';
+
+INSERT OR REPLACE INTO silver_claims
+SELECT claim_id, encounter_id, patient_id, payer_id,
+       date_of_service, submission_date,
+       CAST(total_charge_amount AS REAL),
+       claim_status,
+       CASE UPPER(TRIM(is_clean_claim))
+           WHEN 'TRUE'  THEN 1
+           WHEN '1'     THEN 1
+           WHEN 'YES'   THEN 1
+           ELSE 0
+       END,
+       submission_method
+FROM bronze_claims
+WHERE claim_id IS NOT NULL AND claim_id != '';
+
+INSERT OR REPLACE INTO silver_payments
+SELECT payment_id, claim_id, payer_id,
+       CAST(payment_amount AS REAL),
+       CAST(allowed_amount AS REAL),
+       payment_date, payment_method,
+       CASE UPPER(TRIM(is_accurate_payment))
+           WHEN 'TRUE'  THEN 1
+           WHEN '1'     THEN 1
+           WHEN 'YES'   THEN 1
+           ELSE 0
+       END
+FROM bronze_payments
+WHERE payment_id IS NOT NULL AND payment_id != '';
+
+INSERT OR REPLACE INTO silver_denials
+SELECT denial_id, claim_id, denial_reason_code, denial_reason_description,
+       denial_date,
+       CAST(denied_amount AS REAL),
+       appeal_status, appeal_date,
+       CAST(COALESCE(NULLIF(recovered_amount, ''), '0') AS REAL)
+FROM bronze_denials
+WHERE denial_id IS NOT NULL AND denial_id != '';
+
+INSERT OR REPLACE INTO silver_adjustments
+SELECT adjustment_id, claim_id, adjustment_type_code, adjustment_type_description,
+       CAST(adjustment_amount AS REAL),
+       adjustment_date
+FROM bronze_adjustments
+WHERE adjustment_id IS NOT NULL AND adjustment_id != '';
+
+INSERT OR REPLACE INTO silver_operating_costs
+SELECT period,
+       CAST(billing_staff_cost AS REAL),
+       CAST(software_cost      AS REAL),
+       CAST(outsourcing_cost   AS REAL),
+       CAST(supplies_overhead  AS REAL),
+       CAST(total_rcm_cost     AS REAL)
+FROM bronze_operating_costs
+WHERE period IS NOT NULL AND period != '';
+"""
+
+
+# ===========================================================================
+# GOLD LAYER — Aggregated Business-Ready Views
+# ===========================================================================
+# These SQL VIEWs join and aggregate Silver tables into the five KPI domains
+# used by the dashboard.  Because they are VIEWs (not materialized tables)
+# they are always up-to-date and require no refresh step.
+# ===========================================================================
+
+GOLD_VIEWS_SQL = """
+-- Gold: Monthly KPI rollup
+-- Aggregates claims, payments, and denial counts by service month.
+-- Powers the trend charts in the Executive Summary and Revenue tabs.
+CREATE VIEW IF NOT EXISTS gold_monthly_kpis AS
+SELECT
+    strftime('%Y-%m', c.date_of_service)                                         AS period,
+    COUNT(DISTINCT c.claim_id)                                                   AS total_claims,
+    SUM(c.total_charge_amount)                                                   AS total_charges,
+    COALESCE(SUM(p.payment_amount), 0)                                           AS total_payments,
+    SUM(CASE WHEN c.is_clean_claim = 1 THEN 1 ELSE 0 END) * 1.0
+        / NULLIF(COUNT(c.claim_id), 0)                                           AS clean_claim_rate,
+    SUM(CASE WHEN c.claim_status = 'Denied' THEN 1 ELSE 0 END) * 1.0
+        / NULLIF(COUNT(c.claim_id), 0)                                           AS denial_rate,
+    CAST(COALESCE(SUM(p.payment_amount), 0) AS REAL)
+        / NULLIF(SUM(c.total_charge_amount), 0)                                  AS gross_collection_rate
+FROM silver_claims c
+LEFT JOIN silver_payments p ON c.claim_id = p.claim_id
+GROUP BY strftime('%Y-%m', c.date_of_service)
+ORDER BY period;
+
+-- Gold: Payer performance summary
+-- One row per payer with total claims, charges, payments, and denial/collection rates.
+-- Powers the Payer Analysis tab.
+CREATE VIEW IF NOT EXISTS gold_payer_performance AS
+SELECT
+    py.payer_id,
+    py.payer_name,
+    py.payer_type,
+    COUNT(DISTINCT c.claim_id)                                                   AS total_claims,
+    SUM(c.total_charge_amount)                                                   AS total_charges,
+    COALESCE(SUM(p.payment_amount), 0)                                           AS total_payments,
+    SUM(CASE WHEN c.claim_status = 'Denied' THEN 1 ELSE 0 END) * 1.0
+        / NULLIF(COUNT(c.claim_id), 0)                                           AS denial_rate,
+    CAST(COALESCE(SUM(p.payment_amount), 0) AS REAL)
+        / NULLIF(SUM(c.total_charge_amount), 0)                                  AS gross_collection_rate
+FROM silver_payers py
+LEFT JOIN silver_claims c  ON py.payer_id = c.payer_id
+LEFT JOIN silver_payments p ON c.claim_id = p.claim_id
+GROUP BY py.payer_id, py.payer_name, py.payer_type
+ORDER BY total_payments DESC;
+
+-- Gold: Department performance summary
+-- Revenue, encounter volume, and revenue-per-encounter by clinical department.
+-- Powers the Department Performance tab.
+CREATE VIEW IF NOT EXISTS gold_department_performance AS
+SELECT
+    e.department,
+    COUNT(DISTINCT e.encounter_id)                                               AS total_encounters,
+    COALESCE(SUM(ch.charge_amount), 0)                                           AS total_charges,
+    COALESCE(SUM(p.payment_amount), 0)                                           AS total_payments,
+    CAST(COALESCE(SUM(p.payment_amount), 0) AS REAL)
+        / NULLIF(COUNT(DISTINCT e.encounter_id), 0)                              AS revenue_per_encounter
+FROM silver_encounters e
+LEFT JOIN silver_charges  ch ON e.encounter_id = ch.encounter_id
+LEFT JOIN silver_claims    c ON e.encounter_id = c.encounter_id
+LEFT JOIN silver_payments  p ON c.claim_id     = p.claim_id
+GROUP BY e.department
+ORDER BY total_payments DESC;
+
+-- Gold: A/R aging buckets
+-- Groups open (unpaid) claims by age of the date-of-service.
+-- Powers the A/R Aging & Cash Flow tab.
+CREATE VIEW IF NOT EXISTS gold_ar_aging AS
+SELECT
+    CASE
+        WHEN julianday('now') - julianday(c.date_of_service) <=  30 THEN '0-30 days'
+        WHEN julianday('now') - julianday(c.date_of_service) <=  60 THEN '31-60 days'
+        WHEN julianday('now') - julianday(c.date_of_service) <=  90 THEN '61-90 days'
+        WHEN julianday('now') - julianday(c.date_of_service) <= 120 THEN '91-120 days'
+        ELSE '120+ days'
+    END                                                                          AS aging_bucket,
+    COUNT(c.claim_id)                                                            AS claim_count,
+    SUM(c.total_charge_amount)                                                   AS total_billed,
+    COALESCE(SUM(p.payment_amount), 0)                                           AS total_collected,
+    SUM(c.total_charge_amount) - COALESCE(SUM(p.payment_amount), 0)             AS outstanding_balance
+FROM silver_claims c
+LEFT JOIN silver_payments p ON c.claim_id = p.claim_id
+WHERE c.claim_status NOT IN ('Paid')
+GROUP BY aging_bucket;
+
+-- Gold: Denial reason analysis
+-- Aggregates denial counts, denied/recovered dollars, and appeal success rates
+-- by denial reason code.  Powers the Claims & Denials tab.
+CREATE VIEW IF NOT EXISTS gold_denial_analysis AS
+SELECT
+    d.denial_reason_code,
+    d.denial_reason_description,
+    COUNT(d.denial_id)                                                           AS denial_count,
+    SUM(d.denied_amount)                                                         AS total_denied,
+    COALESCE(SUM(d.recovered_amount), 0)                                         AS total_recovered,
+    CAST(SUM(CASE WHEN d.appeal_status = 'Won' THEN 1 ELSE 0 END) AS REAL)
+        / NULLIF(COUNT(d.denial_id), 0)                                          AS appeal_success_rate
+FROM silver_denials d
+GROUP BY d.denial_reason_code, d.denial_reason_description
+ORDER BY denial_count DESC;
+"""
+
+
+# ===========================================================================
+# Silver Layer Indexes
 # ===========================================================================
 
 INDEX_SQL = """
--- Claims indexes: most-queried table in the dashboard
-CREATE INDEX IF NOT EXISTS idx_claims_dos          ON claims(date_of_service);
-CREATE INDEX IF NOT EXISTS idx_claims_submission    ON claims(submission_date);
-CREATE INDEX IF NOT EXISTS idx_claims_payer         ON claims(payer_id);
-CREATE INDEX IF NOT EXISTS idx_claims_patient       ON claims(patient_id);
-CREATE INDEX IF NOT EXISTS idx_claims_encounter     ON claims(encounter_id);
-CREATE INDEX IF NOT EXISTS idx_claims_status        ON claims(claim_status);
+-- silver_claims: most-queried table in the dashboard
+CREATE INDEX IF NOT EXISTS idx_silver_claims_dos         ON silver_claims(date_of_service);
+CREATE INDEX IF NOT EXISTS idx_silver_claims_submission  ON silver_claims(submission_date);
+CREATE INDEX IF NOT EXISTS idx_silver_claims_payer       ON silver_claims(payer_id);
+CREATE INDEX IF NOT EXISTS idx_silver_claims_patient     ON silver_claims(patient_id);
+CREATE INDEX IF NOT EXISTS idx_silver_claims_encounter   ON silver_claims(encounter_id);
+CREATE INDEX IF NOT EXISTS idx_silver_claims_status      ON silver_claims(claim_status);
 
--- Payments indexes: frequently joined with claims
-CREATE INDEX IF NOT EXISTS idx_payments_claim       ON payments(claim_id);
-CREATE INDEX IF NOT EXISTS idx_payments_date        ON payments(payment_date);
-CREATE INDEX IF NOT EXISTS idx_payments_payer       ON payments(payer_id);
+-- silver_payments: frequently joined with claims
+CREATE INDEX IF NOT EXISTS idx_silver_payments_claim     ON silver_payments(claim_id);
+CREATE INDEX IF NOT EXISTS idx_silver_payments_date      ON silver_payments(payment_date);
+CREATE INDEX IF NOT EXISTS idx_silver_payments_payer     ON silver_payments(payer_id);
 
--- Denials indexes: used for denial analysis tab
-CREATE INDEX IF NOT EXISTS idx_denials_claim        ON denials(claim_id);
-CREATE INDEX IF NOT EXISTS idx_denials_reason       ON denials(denial_reason_code);
-CREATE INDEX IF NOT EXISTS idx_denials_date         ON denials(denial_date);
+-- silver_denials: denial analysis tab
+CREATE INDEX IF NOT EXISTS idx_silver_denials_claim      ON silver_denials(claim_id);
+CREATE INDEX IF NOT EXISTS idx_silver_denials_reason     ON silver_denials(denial_reason_code);
+CREATE INDEX IF NOT EXISTS idx_silver_denials_date       ON silver_denials(denial_date);
 
--- Adjustments indexes
-CREATE INDEX IF NOT EXISTS idx_adjustments_claim    ON adjustments(claim_id);
-CREATE INDEX IF NOT EXISTS idx_adjustments_type     ON adjustments(adjustment_type_code);
+-- silver_adjustments
+CREATE INDEX IF NOT EXISTS idx_silver_adjustments_claim  ON silver_adjustments(claim_id);
+CREATE INDEX IF NOT EXISTS idx_silver_adjustments_type   ON silver_adjustments(adjustment_type_code);
 
--- Encounters indexes: filtered by date, department, type
-CREATE INDEX IF NOT EXISTS idx_encounters_dos       ON encounters(date_of_service);
-CREATE INDEX IF NOT EXISTS idx_encounters_dept      ON encounters(department);
-CREATE INDEX IF NOT EXISTS idx_encounters_type      ON encounters(encounter_type);
-CREATE INDEX IF NOT EXISTS idx_encounters_patient   ON encounters(patient_id);
+-- silver_encounters: filtered by date, department, type
+CREATE INDEX IF NOT EXISTS idx_silver_encounters_dos     ON silver_encounters(date_of_service);
+CREATE INDEX IF NOT EXISTS idx_silver_encounters_dept    ON silver_encounters(department);
+CREATE INDEX IF NOT EXISTS idx_silver_encounters_type    ON silver_encounters(encounter_type);
+CREATE INDEX IF NOT EXISTS idx_silver_encounters_patient ON silver_encounters(patient_id);
 
--- Charges indexes
-CREATE INDEX IF NOT EXISTS idx_charges_encounter    ON charges(encounter_id);
-CREATE INDEX IF NOT EXISTS idx_charges_service_date ON charges(service_date);
+-- silver_charges
+CREATE INDEX IF NOT EXISTS idx_silver_charges_encounter  ON silver_charges(encounter_id);
+CREATE INDEX IF NOT EXISTS idx_silver_charges_date       ON silver_charges(service_date);
 """
+
+# ---------------------------------------------------------------------------
+# Legacy table names from the pre-medallion schema.
+# initialize_database() drops these before creating the new schema so that
+# existing databases migrate cleanly without manual intervention.
+# ---------------------------------------------------------------------------
+_LEGACY_TABLES = [
+    "adjustments", "denials", "payments", "claims", "charges",
+    "encounters", "patients", "providers", "operating_costs", "payers",
+]
 
 
 def get_connection(db_path=None):
@@ -310,184 +581,207 @@ def get_connection(db_path=None):
                  Defaults to ./data/rcm_analytics.db.
 
     Returns:
-        sqlite3.Connection: A connection object to the SQLite database.
-
-    Notes:
-        - Each call creates a new connection. In a production app, you might
-          use a connection pool, but for Streamlit's single-user model this
-          is fine.
-        - We enable WAL (Write-Ahead Logging) mode for better concurrent
-          read performance, which helps when the dashboard refreshes while
-          data is being loaded.
+        sqlite3.Connection with WAL mode and foreign-key enforcement enabled.
     """
     path = db_path or DB_PATH
     conn = sqlite3.connect(path)
-    # WAL mode allows concurrent readers and one writer, which is ideal
-    # for a dashboard that reads frequently while data loads happen occasionally.
     conn.execute("PRAGMA journal_mode=WAL;")
-    # Foreign key enforcement is off by default in SQLite; turn it on
-    # so that our FOREIGN KEY constraints actually prevent bad data.
     conn.execute("PRAGMA foreign_keys=ON;")
     return conn
 
 
 def create_tables(conn):
     """
-    Create all database tables if they don't already exist.
+    Create all Bronze, Silver, and Gold schema objects.
 
-    This is idempotent - safe to call multiple times. The "IF NOT EXISTS"
-    clause in each CREATE TABLE statement means existing tables and their
-    data are preserved.
+    Idempotent — the IF NOT EXISTS / CREATE VIEW IF NOT EXISTS clauses
+    mean this is safe to call on an already-initialised database.
 
     Args:
         conn: An active SQLite connection.
     """
-    conn.executescript(SCHEMA_SQL)
+    conn.executescript(BRONZE_SCHEMA_SQL)
+    conn.executescript(SILVER_SCHEMA_SQL)
+    conn.executescript(GOLD_VIEWS_SQL)
     conn.executescript(INDEX_SQL)
     conn.commit()
-    print("  [OK] Tables and indexes created successfully.")
+    print("  [OK] Bronze tables, Silver tables, Gold views, and indexes created.")
 
 
-def load_csv_to_table(conn, table_name, csv_filename):
+def load_csv_to_bronze(conn, bronze_table, csv_filename):
     """
-    Load a single CSV file into its corresponding database table.
+    Load a CSV file into the corresponding Bronze table.
 
-    This function:
-        1. Reads the CSV into a pandas DataFrame.
-        2. Handles boolean columns (True/False -> 1/0 for SQLite compatibility).
-        3. Replaces all existing data in the table (DELETE + INSERT pattern).
-        4. Reports the number of rows loaded.
+    All values land as TEXT (raw, untyped) exactly as they appear in the CSV.
+    The _loaded_at column is set automatically by the SQLite DEFAULT expression.
 
     Args:
         conn:          An active SQLite connection.
-        table_name:    The database table name (e.g., "claims").
-        csv_filename:  The CSV filename in the data directory (e.g., "claims.csv").
-
-    Why DELETE + INSERT instead of just INSERT?
-        This makes the function idempotent. Running it twice loads the same
-        data without duplicates. In production, you'd use an upsert (INSERT
-        OR REPLACE) or a staging-table pattern for incremental loads.
+        bronze_table:  Bronze table name (e.g. "bronze_claims").
+        csv_filename:  CSV filename in the data directory (e.g. "claims.csv").
     """
     csv_path = os.path.join(DATA_DIR, csv_filename)
     if not os.path.exists(csv_path):
         print(f"  [SKIP] {csv_filename} not found at {csv_path}")
         return
 
-    # Read the CSV into a DataFrame
-    df = pd.read_csv(csv_path)
+    # Read all columns as strings — bronze stores raw TEXT
+    df = pd.read_csv(csv_path, dtype=str)
 
-    # SQLite doesn't have a native BOOLEAN type. Convert True/False to 1/0
-    # so that SUM() and other aggregate functions work correctly on these columns.
-    bool_cols = [c for c in df.columns if c.startswith("is_")]
-    for col in bool_cols:
-        df[col] = df[col].astype(str).str.lower().map({"true": 1, "false": 0})
+    # Strip the metadata column if it happens to be in the CSV already
+    df = df.drop(columns=["_loaded_at"], errors="ignore")
 
-    # Clear existing data and insert fresh rows.
-    # We use a transaction (BEGIN/COMMIT) so that the table is never empty
-    # if something goes wrong mid-load.
-    conn.execute(f"DELETE FROM {table_name};")
-    df.to_sql(table_name, conn, if_exists="append", index=False)
+    conn.execute(f"DELETE FROM {bronze_table};")
+    df.to_sql(bronze_table, conn, if_exists="append", index=False)
     conn.commit()
 
-    print(f"  [OK] Loaded {len(df):,} rows into '{table_name}' from {csv_filename}")
+    print(f"  [OK] Bronze: loaded {len(df):,} rows into '{bronze_table}' from {csv_filename}")
+
+
+def _etl_bronze_to_silver(conn):
+    """
+    Transform Bronze (raw TEXT) data into the Silver (typed, validated) layer.
+
+    Runs the BRONZE_TO_SILVER_SQL script which:
+      - Casts money columns to REAL
+      - Converts boolean strings ('True'/'False') to INTEGER (1/0)
+      - Casts integer columns appropriately
+      - Skips rows with NULL/empty primary keys
+
+    Foreign-key constraints on Silver tables enforce referential integrity;
+    rows that violate constraints are silently skipped by INSERT OR REPLACE.
+    """
+    # executescript issues its own COMMIT first, so we wrap the FK pragma
+    conn.execute("PRAGMA foreign_keys=OFF;")
+    conn.executescript(BRONZE_TO_SILVER_SQL)
+    conn.execute("PRAGMA foreign_keys=ON;")
+    conn.commit()
+    print("  [OK] Silver: ETL from Bronze complete.")
 
 
 def initialize_database(db_path=None):
     """
-    Full database initialization: create tables, load all CSV data.
+    Full medallion-architecture database initialisation.
 
-    This is the main entry point for setting up the database. It:
-        1. Creates a new SQLite database file (or opens existing one).
-        2. Creates all 10 tables with proper schema and indexes.
-        3. Loads each CSV file into its corresponding table.
+    Steps:
+        1. Open / create the SQLite database file.
+        2. Drop any legacy un-prefixed tables (migration from old schema).
+        3. Create Bronze tables, Silver tables, and Gold views.
+        4. Load each CSV into its Bronze table (raw TEXT ingestion).
+        5. ETL Bronze → Silver (type casting + validation).
+        6. Report row counts for all three layers.
 
     Args:
-        db_path: Optional override for the database file path.
-
-    The CSV-to-table mapping:
-        payers.csv          -> payers          (insurance companies)
-        patients.csv        -> patients        (patient demographics)
-        providers.csv       -> providers       (physicians)
-        encounters.csv      -> encounters      (patient visits)
-        charges.csv         -> charges         (billable line items)
-        claims.csv          -> claims          (insurance submissions)
-        payments.csv        -> payments        (remittances received)
-        denials.csv         -> denials         (denied claims)
-        adjustments.csv     -> adjustments     (financial adjustments)
-        operating_costs.csv -> operating_costs (monthly RCM costs)
+        db_path: Optional path override (defaults to ./data/rcm_analytics.db).
     """
     print("=" * 60)
-    print("Healthcare RCM Analytics - Database Initialization")
+    print("Healthcare RCM Analytics — Medallion Architecture Init")
     print("=" * 60)
 
     conn = get_connection(db_path)
-    print(f"\n  Database: {db_path or DB_PATH}")
-    print()
+    print(f"\n  Database: {db_path or DB_PATH}\n")
 
-    # Step 1: Create the schema
-    print("Step 1: Creating tables and indexes...")
+    # ------------------------------------------------------------------
+    # Step 1: Migrate legacy schema
+    # ------------------------------------------------------------------
+    print("Step 1: Removing legacy (pre-medallion) tables if present...")
+    conn.execute("PRAGMA foreign_keys=OFF;")
+    for tbl in _LEGACY_TABLES:
+        conn.execute(f"DROP TABLE IF EXISTS {tbl};")
+    conn.execute("PRAGMA foreign_keys=ON;")
+    conn.commit()
+    print("  [OK] Legacy tables cleared.\n")
+
+    # ------------------------------------------------------------------
+    # Step 2: Create schema (Bronze + Silver + Gold)
+    # ------------------------------------------------------------------
+    print("Step 2: Creating Bronze tables, Silver tables, and Gold views...")
     create_tables(conn)
     print()
 
-    # Step 2: Load CSV data into tables
-    # The order matters because of foreign key constraints.
-    # We load reference tables first, then transactional tables.
-    print("Step 2: Loading CSV data into tables...")
-    csv_table_map = [
-        # Reference tables first (no foreign key dependencies)
-        ("payers",          "payers.csv"),
-        ("patients",        "patients.csv"),
-        ("providers",       "providers.csv"),
-        # Transactional tables (depend on reference tables)
-        ("encounters",      "encounters.csv"),
-        ("charges",         "charges.csv"),
-        ("claims",          "claims.csv"),
-        ("payments",        "payments.csv"),
-        ("denials",         "denials.csv"),
-        ("adjustments",     "adjustments.csv"),
-        # Operational tables
-        ("operating_costs", "operating_costs.csv"),
+    # ------------------------------------------------------------------
+    # Step 3: Ingest CSV files into Bronze (raw TEXT)
+    # ------------------------------------------------------------------
+    print("Step 3: Loading CSV files into Bronze layer...")
+    bronze_csv_map = [
+        ("bronze_payers",          "payers.csv"),
+        ("bronze_patients",        "patients.csv"),
+        ("bronze_providers",       "providers.csv"),
+        ("bronze_encounters",      "encounters.csv"),
+        ("bronze_charges",         "charges.csv"),
+        ("bronze_claims",          "claims.csv"),
+        ("bronze_payments",        "payments.csv"),
+        ("bronze_denials",         "denials.csv"),
+        ("bronze_adjustments",     "adjustments.csv"),
+        ("bronze_operating_costs", "operating_costs.csv"),
     ]
+    for bronze_table, csv_filename in bronze_csv_map:
+        load_csv_to_bronze(conn, bronze_table, csv_filename)
+    print()
 
-    for table_name, csv_filename in csv_table_map:
-        load_csv_to_table(conn, table_name, csv_filename)
+    # ------------------------------------------------------------------
+    # Step 4: ETL Bronze → Silver
+    # ------------------------------------------------------------------
+    print("Step 4: Running ETL — Bronze → Silver (type casting & validation)...")
+    _etl_bronze_to_silver(conn)
+    print()
 
-    # Step 3: Verify the load
-    print("\nStep 3: Verifying loaded data...")
-    for table_name, _ in csv_table_map:
-        count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-        print(f"  {table_name}: {count:,} rows")
+    # ------------------------------------------------------------------
+    # Step 5: Verify row counts across all layers
+    # ------------------------------------------------------------------
+    print("Step 5: Row count verification")
+    print(f"  {'Table':<35} {'Bronze':>8} {'Silver':>8}")
+    print(f"  {'-'*35} {'-'*8} {'-'*8}")
+    table_names = [
+        ("payers", "payers"),
+        ("patients", "patients"),
+        ("providers", "providers"),
+        ("encounters", "encounters"),
+        ("charges", "charges"),
+        ("claims", "claims"),
+        ("payments", "payments"),
+        ("denials", "denials"),
+        ("adjustments", "adjustments"),
+        ("operating_costs", "operating_costs"),
+    ]
+    for base, _ in table_names:
+        b = conn.execute(f"SELECT COUNT(*) FROM bronze_{base}").fetchone()[0]
+        s = conn.execute(f"SELECT COUNT(*) FROM silver_{base}").fetchone()[0]
+        print(f"  {base:<35} {b:>8,} {s:>8,}")
+
+    print("\n  Gold views (computed at query time — no row count):")
+    gold_views = [
+        "gold_monthly_kpis",
+        "gold_payer_performance",
+        "gold_department_performance",
+        "gold_ar_aging",
+        "gold_denial_analysis",
+    ]
+    for v in gold_views:
+        print(f"    ✓ {v}")
 
     conn.close()
     print("\n" + "=" * 60)
-    print("Database initialization complete!")
-    print(f"Database file: {db_path or DB_PATH}")
+    print("Medallion architecture initialisation complete!")
+    print(f"Database: {db_path or DB_PATH}")
     print("=" * 60)
 
+
+# ---------------------------------------------------------------------------
+# Utility helpers (used by data_loader and metadata pages)
+# ---------------------------------------------------------------------------
 
 def query_to_dataframe(sql, params=None, db_path=None):
     """
     Execute a SQL query and return results as a pandas DataFrame.
 
-    This is a convenience function used by the data_loader module to
-    fetch data for the Streamlit dashboard.
-
     Args:
-        sql:     SQL query string. Can include ? placeholders for parameters.
-        params:  Optional tuple/list of parameters for parameterized queries.
-                 Always use parameters instead of string formatting to prevent
-                 SQL injection (even though this is a local app, it's good practice).
-        db_path: Optional override for the database file path.
+        sql:     SQL string (may contain ? placeholders).
+        params:  Optional tuple/list of parameters for the query.
+        db_path: Optional path override.
 
     Returns:
-        pd.DataFrame: Query results as a DataFrame.
-
-    Example:
-        # Get all denied claims for a specific payer
-        df = query_to_dataframe(
-            "SELECT * FROM claims WHERE claim_status = ? AND payer_id = ?",
-            params=("Denied", "PYR001")
-        )
+        pd.DataFrame with query results.
     """
     conn = get_connection(db_path)
     try:
@@ -502,14 +796,14 @@ def query_to_dataframe(sql, params=None, db_path=None):
 
 def get_table_info(table_name, db_path=None):
     """
-    Get column information for a specific table (useful for debugging).
+    Return PRAGMA table_info() for a named table (useful for debugging).
 
     Args:
-        table_name: Name of the table to inspect.
-        db_path:    Optional override for the database file path.
+        table_name: Name of the table to inspect (use full name, e.g. 'silver_claims').
+        db_path:    Optional path override.
 
     Returns:
-        list of tuples: Each tuple contains (column_id, name, type, not_null, default, pk).
+        list of tuples: (column_id, name, type, not_null, default, pk).
     """
     conn = get_connection(db_path)
     try:
@@ -519,11 +813,30 @@ def get_table_info(table_name, db_path=None):
         conn.close()
 
 
+def has_medallion_schema(db_path=None):
+    """
+    Return True if the database already has the Silver layer populated.
+
+    Used by data_loader to decide whether to auto-initialise.
+    """
+    path = db_path or DB_PATH
+    if not os.path.exists(path):
+        return False
+    try:
+        conn = sqlite3.connect(path)
+        conn.execute("SELECT 1 FROM silver_claims LIMIT 1")
+        conn.close()
+        return True
+    except sqlite3.OperationalError:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return False
+
+
 # ===========================================================================
 # CLI Entry Point
-# ===========================================================================
-# Run this module directly to initialize the database:
-#   python -m src.database
 # ===========================================================================
 
 if __name__ == "__main__":
