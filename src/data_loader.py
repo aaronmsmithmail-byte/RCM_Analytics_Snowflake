@@ -2,39 +2,42 @@
 Data Loader for Healthcare RCM Analytics Dashboard
 ===================================================
 
-This module is the bridge between the SQLite database and the Streamlit dashboard.
-It loads all RCM data tables into pandas DataFrames, handling date parsing and
-type conversions so that the metrics engine can work with clean, typed data.
+This module is the bridge between the Silver layer of the SQLite Medallion
+Architecture and the Streamlit dashboard.  It loads all 10 Silver tables into
+pandas DataFrames, handling date parsing and type conversions so that the
+metrics engine can work with clean, typed data.
 
-Data Flow:
-    CSV Files  -->  SQLite Database  -->  DataFrames (this module)  -->  Metrics Engine
-                    (src/database.py)     (src/data_loader.py)          (src/metrics.py)
+Medallion Architecture Data Flow:
+    CSV Files
+        ↓ (raw ingestion)
+    Bronze tables  (bronze_*, all TEXT, _loaded_at timestamp)
+        ↓ (ETL — type casting, validation)
+    Silver tables  (silver_*, typed + FK-constrained)  ← this module reads here
+        ↓ (aggregation views)
+    Gold views     (gold_*, pre-joined SQL aggregates)  ← load_gold_data() reads here
+        ↓
+    DataFrames  →  Metrics Engine  →  Dashboard
 
-Why load into DataFrames instead of querying SQL directly in the metrics?
-    - pandas provides powerful groupby/pivot/merge operations that would be
-      verbose in SQL.
-    - The metrics engine uses numpy for vectorized calculations.
-    - With Streamlit's @st.cache_data decorator, the DataFrames are cached in
-      memory, so subsequent page loads are instant.
-    - For our data volume (~3,000 encounters), loading everything into memory
-      is fast and allows the interactive sidebar filters to work instantly.
-
-Scaling Considerations:
-    If your data grows to millions of rows, you can:
-    1. Push more aggregation into SQL queries (pre-aggregate by month).
-    2. Use query_to_dataframe() from src/database.py for filtered queries.
-    3. Partition the database by date range.
-    4. Migrate to PostgreSQL or DuckDB for larger-scale analytics.
+Why load Silver into DataFrames instead of querying Gold views for everything?
+    - pandas groupby/pivot/merge operations power the interactive sidebar filters
+      (date range, payer, department) which must re-slice the data on every
+      Streamlit rerun.
+    - Gold views are fixed aggregations; Silver DataFrames let the metrics engine
+      slice in any dimension the user requests.
+    - With Streamlit's @st.cache_data, the Silver DataFrames are cached in
+      memory so subsequent page loads are instant.
+    - For our data volume (~3,000 encounters), loading Silver into memory is
+      fast and keeps the metrics layer simple.
 
 Usage:
-    from src.data_loader import load_all_data
-    data = load_all_data()
-    # data is a dict: {"claims": DataFrame, "payments": DataFrame, ...}
+    from src.data_loader import load_all_data, load_gold_data
+    data = load_all_data()      # Silver layer → dict of DataFrames
+    gold = load_gold_data()     # Gold layer  → dict of pre-aggregated DataFrames
 """
 
 import os
 import pandas as pd
-from src.database import DB_PATH, query_to_dataframe, initialize_database
+from src.database import DB_PATH, query_to_dataframe, initialize_database, has_medallion_schema
 
 
 def _parse_dates(df, date_columns):
@@ -69,9 +72,9 @@ def _parse_booleans(df, bool_columns):
     """
     Convert integer boolean columns from SQLite (0/1) to Python booleans.
 
-    SQLite doesn't have a native BOOLEAN type, so we store booleans as
-    INTEGER (0 = False, 1 = True). The metrics engine expects Python
-    booleans so that .sum() counts True values correctly.
+    The Silver ETL casts 'True'/'False' strings to INTEGER (1/0).
+    The metrics engine expects Python booleans so that .sum() counts
+    True values correctly.
 
     Args:
         df:            The DataFrame to modify.
@@ -85,7 +88,9 @@ def _parse_booleans(df, bool_columns):
             df[col] = df[col].astype(bool)
     return df
 
-# Required columns for each table — used for validation after load
+
+# Required columns for each table — used for validation after load.
+# Keys match the un-prefixed logical table names (what the rest of the app uses).
 REQUIRED_COLUMNS = {
     "payers": ["payer_id", "payer_name", "payer_type"],
     "patients": ["patient_id", "primary_payer_id"],
@@ -103,129 +108,119 @@ REQUIRED_COLUMNS = {
 
 
 def _validate_columns(df, key, path):
-    """Raise ValueError if any required columns are missing."""
+    """Raise ValueError if any required columns are missing from the DataFrame."""
     required = REQUIRED_COLUMNS.get(key, [])
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(
-            f"Data file '{path}' is missing required columns: {missing}"
+            f"Data source '{path}' is missing required columns: {missing}"
         )
 
 
 def load_all_data():
     """
-    Load all 10 RCM data tables from SQLite into a dictionary of DataFrames.
+    Load all 10 Silver-layer tables from SQLite into a dict of DataFrames.
 
     This is the primary function called by the Streamlit dashboard at startup.
-    It queries each table, parses dates and booleans, and returns everything
-    in a single dictionary for easy access.
+    It reads from the silver_* tables (cleaned, typed, FK-validated data),
+    parses dates and booleans, and returns everything in a single dict.
 
     Returns:
-        dict: Keys are table names, values are pandas DataFrames.
+        dict: Keys are logical table names (without the silver_ prefix).
             {
-                "payers":          DataFrame (10 rows),
-                "patients":        DataFrame (500 rows),
-                "providers":       DataFrame (25 rows),
-                "encounters":      DataFrame (3,000 rows),
+                "payers":          DataFrame (~10 rows),
+                "patients":        DataFrame (~500 rows),
+                "providers":       DataFrame (~25 rows),
+                "encounters":      DataFrame (~3,000 rows),
                 "charges":         DataFrame (~5,900 rows),
-                "claims":          DataFrame (2,800 rows),
+                "claims":          DataFrame (~2,800 rows),
                 "payments":        DataFrame (~2,700 rows),
                 "denials":         DataFrame (~400 rows),
-                "adjustments":     DataFrame (600 rows),
-                "operating_costs": DataFrame (24 rows),
+                "adjustments":     DataFrame (~600 rows),
+                "operating_costs": DataFrame (~24 rows),
             }
 
     Auto-initialization:
-        If the database file doesn't exist yet, this function automatically
-        calls initialize_database() to create it from the CSV files. This
-        means the dashboard "just works" on first run without manual setup.
+        If the database does not exist or lacks the Silver schema, this
+        function automatically runs initialize_database() to build the full
+        medallion architecture from the CSV source files.
     """
-    # -----------------------------------------------------------------------
-    # Auto-initialize the database if it doesn't exist.
-    # This provides a seamless first-run experience: the user just runs
-    # `streamlit run app.py` and everything sets itself up.
-    # -----------------------------------------------------------------------
-    if not os.path.exists(DB_PATH):
-        print("Database not found. Initializing from CSV files...")
+    # ------------------------------------------------------------------
+    # Auto-initialize if the Silver layer is not yet present.
+    # This covers both "first run" (no DB file) and "schema migration"
+    # (old DB exists but uses the pre-medallion un-prefixed table names).
+    # ------------------------------------------------------------------
+    if not has_medallion_schema():
+        print("Silver layer not found. Running medallion architecture init...")
         initialize_database()
 
-    # -----------------------------------------------------------------------
-    # Define which columns need date parsing for each table.
-    # We explicitly list them rather than auto-detecting because:
-    #   1. It's faster (no need to scan column names).
-    #   2. It's safer (won't accidentally parse a non-date column).
-    #   3. It documents which columns are dates for future developers.
-    # -----------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Table configuration: logical name → SQL query + parse hints.
+    # All queries target silver_* tables in the database.
+    # ------------------------------------------------------------------
     table_config = {
         "payers": {
-            "query": "SELECT * FROM payers",
+            "query": "SELECT * FROM silver_payers",
             "date_cols": [],
             "bool_cols": [],
         },
         "patients": {
-            "query": "SELECT * FROM patients",
+            "query": "SELECT * FROM silver_patients",
             "date_cols": ["date_of_birth"],
             "bool_cols": [],
         },
         "providers": {
-            "query": "SELECT * FROM providers",
+            "query": "SELECT * FROM silver_providers",
             "date_cols": [],
             "bool_cols": [],
         },
         "encounters": {
-            "query": "SELECT * FROM encounters",
+            "query": "SELECT * FROM silver_encounters",
             "date_cols": ["date_of_service", "discharge_date"],
             "bool_cols": [],
         },
         "charges": {
-            "query": "SELECT * FROM charges",
+            "query": "SELECT * FROM silver_charges",
             "date_cols": ["service_date", "post_date"],
             "bool_cols": [],
         },
         "claims": {
-            "query": "SELECT * FROM claims",
+            "query": "SELECT * FROM silver_claims",
             "date_cols": ["date_of_service", "submission_date"],
             "bool_cols": ["is_clean_claim"],
         },
         "payments": {
-            "query": "SELECT * FROM payments",
+            "query": "SELECT * FROM silver_payments",
             "date_cols": ["payment_date"],
             "bool_cols": ["is_accurate_payment"],
         },
         "denials": {
-            "query": "SELECT * FROM denials",
+            "query": "SELECT * FROM silver_denials",
             "date_cols": ["denial_date", "appeal_date"],
             "bool_cols": [],
         },
         "adjustments": {
-            "query": "SELECT * FROM adjustments",
+            "query": "SELECT * FROM silver_adjustments",
             "date_cols": ["adjustment_date"],
             "bool_cols": [],
         },
         "operating_costs": {
-            "query": "SELECT * FROM operating_costs",
-            "date_cols": [],  # 'period' is handled specially below
+            "query": "SELECT * FROM silver_operating_costs",
+            "date_cols": [],  # 'period' handled specially below
             "bool_cols": [],
         },
     }
 
-    # -----------------------------------------------------------------------
-    # Load each table into a DataFrame
-    # -----------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Load each Silver table into a DataFrame
+    # ------------------------------------------------------------------
     data = {}
     for table_name, config in table_config.items():
-        # Execute the SQL query and get a DataFrame
         df = query_to_dataframe(config["query"])
-
-        # Convert date strings to pandas Timestamp objects
         _parse_dates(df, config["date_cols"])
-
-        # Convert 0/1 integers to Python booleans
         _parse_booleans(df, config["bool_cols"])
 
-        # Special handling for the 'period' column in operating_costs.
-        # It stores months as "YYYY-MM" strings, which we parse into
-        # datetime objects (set to the 1st of each month).
+        # 'period' in operating_costs is "YYYY-MM"; parse to datetime
         if table_name == "operating_costs" and "period" in df.columns:
             df["period"] = pd.to_datetime(df["period"], format="%Y-%m")
 
@@ -233,3 +228,30 @@ def load_all_data():
         data[table_name] = df
 
     return data
+
+
+def load_gold_data():
+    """
+    Load all five Gold-layer views from SQLite into a dict of DataFrames.
+
+    Gold views are pre-aggregated and business-ready.  They are useful for
+    displaying summary KPIs directly from SQL without applying pandas filters.
+
+    Returns:
+        dict with keys:
+            "monthly_kpis"           — monthly claim counts, collection rates, etc.
+            "payer_performance"      — per-payer denial rates and collection rates
+            "department_performance" — per-department encounter counts and revenue
+            "ar_aging"               — outstanding balance by aging bucket
+            "denial_analysis"        — denial counts and appeal success by reason code
+    """
+    if not has_medallion_schema():
+        initialize_database()
+
+    return {
+        "monthly_kpis": query_to_dataframe("SELECT * FROM gold_monthly_kpis"),
+        "payer_performance": query_to_dataframe("SELECT * FROM gold_payer_performance"),
+        "department_performance": query_to_dataframe("SELECT * FROM gold_department_performance"),
+        "ar_aging": query_to_dataframe("SELECT * FROM gold_ar_aging"),
+        "denial_analysis": query_to_dataframe("SELECT * FROM gold_denial_analysis"),
+    }
