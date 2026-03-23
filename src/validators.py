@@ -156,7 +156,7 @@ def _check_claim_status_values(data: dict) -> list[dict]:
     claims = data.get("claims")
     if claims is None or "claim_status" not in claims.columns:
         return issues
-    valid_statuses = {"Paid", "Denied", "Appealed", "Pending"}
+    valid_statuses = {"Paid", "Denied", "Appealed", "Pending", "Partially Paid"}
     unknown = ~claims["claim_status"].isin(valid_statuses)
     n = unknown.sum()
     if n > 0:
