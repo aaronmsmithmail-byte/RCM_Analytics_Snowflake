@@ -55,7 +55,28 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 from plotly.subplots import make_subplots
+import streamlit_shadcn_ui as ui
+from streamlit_extras.metric_cards import style_metric_cards
+
+# ── Design System ─────────────────────────────────────────────────────
+# Set global Plotly template so every chart starts with a clean white
+# background and consistent grid styling.
+pio.templates.default = "plotly_white"
+
+# Brand color sequence — used as color_discrete_sequence on all charts.
+# Order: clinical blue, emerald green, amber, red, indigo, sky, violet, teal.
+RCM_COLORS = [
+    "#1E6FBF",  # clinical blue   — primary
+    "#10B981",  # emerald green   — positive / paid
+    "#F59E0B",  # amber           — warning / pending
+    "#EF4444",  # red             — bad / denied
+    "#6366F1",  # indigo          — payer accent
+    "#0EA5E9",  # sky blue        — secondary metric
+    "#8B5CF6",  # violet          — department accent
+    "#14B8A6",  # teal            — cash flow
+]
 
 # Import our custom modules
 from src.data_loader import load_all_data       # Loads all tables from SQLite
@@ -102,27 +123,35 @@ if "active_page" not in st.session_state:
     st.session_state["active_page"] = "dashboard"
 
 # ── Custom CSS ───────────────────────────────────────────────────────
-# Streamlit allows injecting custom CSS via st.markdown with unsafe_allow_html.
-# We use this to create color-coded KPI cards:
-#   - Green gradient (metric-good): KPI is meeting/exceeding benchmarks
-#   - Yellow/Orange gradient (metric-warn): KPI needs attention
-#   - Red gradient (metric-bad): KPI is critical and needs immediate action
+# KPI cards use a clean white card with a colored left border — a well-known
+# modern SaaS pattern (see Linear, Vercel, Retool dashboards). Status is
+# communicated through the left-border color rather than background color,
+# which is easier to read and works well in both light and dark contexts.
 st.markdown("""
 <style>
+    /* ── KPI metric cards ── */
     .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 12px;
-        color: white;
-        text-align: center;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-left: 4px solid #1E6FBF;
+        border-radius: 8px;
+        padding: 18px 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.05);
         margin-bottom: 10px;
     }
-    .metric-card h2 { margin: 0; font-size: 2.2rem; }
-    .metric-card p { margin: 5px 0 0 0; font-size: 0.9rem; opacity: 0.9; }
-    .metric-good { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
-    .metric-warn { background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%); }
-    .metric-bad { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); }
-    .benchmark-text { font-size: 0.75rem; opacity: 0.8; margin-top: 4px; }
+    .metric-card h2 {
+        margin: 0 0 4px 0;
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1A2332;
+        letter-spacing: -0.02em;
+    }
+    .metric-card p { margin: 0; font-size: 0.875rem; color: #64748b; }
+    /* Status variants — only the left border changes */
+    .metric-good { border-left-color: #10B981; }
+    .metric-warn { border-left-color: #F59E0B; }
+    .metric-bad  { border-left-color: #EF4444; }
+    .benchmark-text { font-size: 0.75rem; color: #94a3b8; margin-top: 6px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -352,6 +381,9 @@ if f_claims.empty:
     st.warning("No claims match the selected filters. Adjust the sidebar filters to see data.")
     st.stop()
 
+# Apply streamlit-extras card styling to all st.metric() widgets
+style_metric_cards(background_color="#ffffff", border_left_color="#1E6FBF", border_color="#e2e8f0", box_shadow=True)
+
 # ── Tabs ─────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Executive Summary",
@@ -387,34 +419,34 @@ with tab1:
     accuracy_val = query_payment_accuracy(params)
     bad_debt_val, bad_debt_amt, total_charges = query_bad_debt_rate(params)
 
-    # Top-level KPI cards
+    # Top-level KPI cards — shadcn ui.metric_card for polished design
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        status = "good" if dar_val < 35 else ("warn" if dar_val < 50 else "bad")
-        metric_card("Days in A/R", f"{dar_val}", "Benchmark: < 35 days", status)
+        dar_status = "✅" if dar_val < 35 else ("⚠️" if dar_val < 50 else "🔴")
+        ui.metric_card(title="Days in A/R", content=f"{dar_val}", description=f"{dar_status} Benchmark: < 35 days", key="card_dar")
     with col2:
-        status = "good" if ncr_val > 95 else ("warn" if ncr_val > 90 else "bad")
-        metric_card("Net Collection Rate", f"{ncr_val}%", "Benchmark: > 95%", status)
+        ncr_status = "✅" if ncr_val > 95 else ("⚠️" if ncr_val > 90 else "🔴")
+        ui.metric_card(title="Net Collection Rate", content=f"{ncr_val}%", description=f"{ncr_status} Benchmark: > 95%", key="card_ncr")
     with col3:
-        status = "good" if ccr_val > 90 else ("warn" if ccr_val > 80 else "bad")
-        metric_card("Clean Claim Rate", f"{ccr_val}%", "Benchmark: > 90%", status)
+        ccr_status = "✅" if ccr_val > 90 else ("⚠️" if ccr_val > 80 else "🔴")
+        ui.metric_card(title="Clean Claim Rate", content=f"{ccr_val}%", description=f"{ccr_status} Benchmark: > 90%", key="card_ccr")
     with col4:
-        status = "good" if denial_val < 10 else ("warn" if denial_val < 15 else "bad")
-        metric_card("Denial Rate", f"{denial_val}%", "Benchmark: < 10%", status)
+        denial_status = "✅" if denial_val < 10 else ("⚠️" if denial_val < 15 else "🔴")
+        ui.metric_card(title="Denial Rate", content=f"{denial_val}%", description=f"{denial_status} Benchmark: < 10%", key="card_denial")
 
     col5, col6, col7, col8 = st.columns(4)
     with col5:
-        status = "good" if gcr_val > 70 else ("warn" if gcr_val > 55 else "bad")
-        metric_card("Gross Collection Rate", f"{gcr_val}%", "Benchmark: > 70%", status)
+        gcr_status = "✅" if gcr_val > 70 else ("⚠️" if gcr_val > 55 else "🔴")
+        ui.metric_card(title="Gross Collection Rate", content=f"{gcr_val}%", description=f"{gcr_status} Benchmark: > 70%", key="card_gcr")
     with col6:
-        status = "good" if fpr_val > 85 else ("warn" if fpr_val > 75 else "bad")
-        metric_card("First-Pass Rate", f"{fpr_val}%", "Benchmark: > 85%", status)
+        fpr_status = "✅" if fpr_val > 85 else ("⚠️" if fpr_val > 75 else "🔴")
+        ui.metric_card(title="First-Pass Rate", content=f"{fpr_val}%", description=f"{fpr_status} Benchmark: > 85%", key="card_fpr")
     with col7:
-        status = "good" if accuracy_val > 95 else ("warn" if accuracy_val > 90 else "bad")
-        metric_card("Payment Accuracy", f"{accuracy_val}%", "Benchmark: > 95%", status)
+        acc_status = "✅" if accuracy_val > 95 else ("⚠️" if accuracy_val > 90 else "🔴")
+        ui.metric_card(title="Payment Accuracy", content=f"{accuracy_val}%", description=f"{acc_status} Benchmark: > 95%", key="card_acc")
     with col8:
-        status = "good" if bad_debt_val < 3 else ("warn" if bad_debt_val < 5 else "bad")
-        metric_card("Bad Debt Rate", f"{bad_debt_val}%", "Benchmark: < 3%", status)
+        bd_status = "✅" if bad_debt_val < 3 else ("⚠️" if bad_debt_val < 5 else "🔴")
+        ui.metric_card(title="Bad Debt Rate", content=f"{bad_debt_val}%", description=f"{bd_status} Benchmark: < 3%", key="card_bd")
 
     st.divider()
 
@@ -426,7 +458,7 @@ with tab1:
                       labels={"year_month": "Month", "days_in_ar": "Days in A/R"})
         fig.add_hline(y=35, line_dash="dash", line_color="green", annotation_text="Benchmark: 35 days")
         fig.update_layout(height=350, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Net Collection Rate Trend")
@@ -434,7 +466,7 @@ with tab1:
                       labels={"year_month": "Month", "ncr": "NCR (%)"})
         fig.add_hline(y=95, line_dash="dash", line_color="green", annotation_text="Benchmark: 95%")
         fig.update_layout(height=350, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Volume summary
     st.subheader("Monthly Volume")
@@ -450,11 +482,11 @@ with tab1:
     vol = vol.merge(claims_vol, on="year_month", how="outer").fillna(0)
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["encounters"], name="Encounters", marker_color="#667eea"))
-    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["claims"], name="Claims", marker_color="#764ba2"))
+    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["encounters"], name="Encounters", marker_color=RCM_COLORS[0]))
+    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["claims"], name="Claims", marker_color=RCM_COLORS[5]))
     fig.update_layout(barmode="group", height=350, margin=dict(t=30, b=30),
                       xaxis_title="Month", yaxis_title="Count")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
 
 # =====================================================================
@@ -512,7 +544,7 @@ with tab2:
         textposition="outside",
     ))
     fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Collection rate trends
     col_left, col_right = st.columns(2)
@@ -522,7 +554,7 @@ with tab2:
         combined_trend.columns = ["Month", "Gross Collection Rate", "Net Collection Rate"]
         fig = px.line(combined_trend, x="Month", y=["Gross Collection Rate", "Net Collection Rate"])
         fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis_title="%")
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Cost to Collect Trend")
@@ -530,14 +562,14 @@ with tab2:
                       labels={"year_month": "Month", "cost_to_collect_pct": "Cost to Collect (%)"})
         fig.add_hline(y=5, line_dash="dash", line_color="green", annotation_text="Target: 5%")
         fig.update_layout(height=350, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Avg reimbursement trend
     st.subheader("Average Reimbursement per Claim")
     fig = px.bar(reimb_trend.reset_index(), x="year_month", y="payment_amount",
                  labels={"year_month": "Month", "payment_amount": "Avg Reimbursement ($)"})
     fig.update_layout(height=300, margin=dict(t=30, b=30))
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Financial summary
     st.subheader("Financial Summary")
@@ -605,9 +637,9 @@ with tab3:
         status_counts = f_claims["claim_status"].value_counts().reset_index()
         status_counts.columns = ["Status", "Count"]
         fig = px.pie(status_counts, values="Count", names="Status",
-                     color_discrete_sequence=px.colors.qualitative.Set2)
+                     color_discrete_sequence=RCM_COLORS)
         fig.update_layout(height=350, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Top Denial Reasons")
@@ -617,7 +649,7 @@ with tab3:
                      labels={"count": "Denial Count", "denial_reason_description": "Reason",
                              "total_denied_amount": "$ Denied"})
         fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis={"categoryorder": "total ascending"})
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Denial & Clean Claim trends
     col_left2, col_right2 = st.columns(2)
@@ -627,7 +659,7 @@ with tab3:
                       labels={"year_month": "Month", "denial_rate": "Denial Rate (%)"})
         fig.add_hline(y=10, line_dash="dash", line_color="green", annotation_text="Target: 10%")
         fig.update_layout(height=300, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right2:
         st.subheader("Clean Claim Rate Trend")
@@ -635,7 +667,7 @@ with tab3:
                       labels={"year_month": "Month", "ccr": "Clean Claim Rate (%)"})
         fig.add_hline(y=90, line_dash="dash", line_color="green", annotation_text="Target: 90%")
         fig.update_layout(height=300, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Charge lag
     col_left3, col_right3 = st.columns(2)
@@ -647,7 +679,7 @@ with tab3:
         fig = px.bar(lag_df, x="Days", y="Count",
                      labels={"Days": "Lag (Days)", "Count": "# of Charges"})
         fig.update_layout(height=300, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right3:
         st.subheader("First-Pass Rate Trend")
@@ -655,7 +687,7 @@ with tab3:
                       labels={"year_month": "Month", "fpr": "First-Pass Rate (%)"})
         fig.add_hline(y=85, line_dash="dash", line_color="green", annotation_text="Target: 85%")
         fig.update_layout(height=300, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Denial details table
     with st.expander("Denial Reasons Detail Table"):
@@ -708,29 +740,29 @@ with tab4:
         fig = px.bar(aging_df, x="Bucket", y="Total A/R",
                      text="% of Total",
                      color="Bucket",
-                     color_discrete_sequence=["#2ecc71", "#27ae60", "#f39c12", "#e74c3c", "#c0392b"])
+                     color_discrete_sequence=["#10B981","#F59E0B","#F97316","#EF4444","#991B1B"])
         fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
         fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("A/R Aging Distribution")
         fig = px.pie(aging_df, values="Total A/R", names="Bucket",
-                     color_discrete_sequence=["#2ecc71", "#27ae60", "#f39c12", "#e74c3c", "#c0392b"])
+                     color_discrete_sequence=["#10B981","#F59E0B","#F97316","#EF4444","#991B1B"])
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # DAR trend
     st.subheader("Days in A/R Trend")
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(
         go.Bar(x=dar_trend.reset_index()["year_month"], y=dar_trend["ar_balance"],
-               name="A/R Balance", marker_color="#667eea", opacity=0.6),
+               name="A/R Balance", marker_color=RCM_COLORS[0], opacity=0.6),
         secondary_y=False,
     )
     fig.add_trace(
         go.Scatter(x=dar_trend.reset_index()["year_month"], y=dar_trend["days_in_ar"],
-                   name="Days in A/R", line=dict(color="#e74c3c", width=3)),
+                   name="Days in A/R", line=dict(color=RCM_COLORS[3], width=3)),
         secondary_y=True,
     )
     fig.add_hline(y=35, line_dash="dash", line_color="green", secondary_y=True,
@@ -738,7 +770,7 @@ with tab4:
     fig.update_layout(height=400, margin=dict(t=30, b=30))
     fig.update_yaxes(title_text="A/R Balance ($)", secondary_y=False)
     fig.update_yaxes(title_text="Days in A/R", secondary_y=True)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Cash flow
     st.subheader("Monthly Cash Flow")
@@ -754,13 +786,13 @@ with tab4:
     cf["Net Cash Flow"] = cf["Payments"] - cf["Charges"]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Charges"], name="Charges", marker_color="#667eea"))
-    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Payments"], name="Payments", marker_color="#2ecc71"))
+    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Charges"], name="Charges", marker_color=RCM_COLORS[0]))
+    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Payments"], name="Payments", marker_color=RCM_COLORS[1]))
     fig.add_trace(go.Scatter(x=cf["Month"], y=cf["Net Cash Flow"], name="Net Cash Flow",
-                             line=dict(color="#e74c3c", width=2, dash="dot")))
+                             line=dict(color=RCM_COLORS[3], width=2, dash="dot")))
     fig.update_layout(barmode="group", height=400, margin=dict(t=30, b=30),
                       yaxis_title="Amount ($)")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # A/R aging table
     with st.expander("A/R Aging Detail"):
@@ -799,17 +831,18 @@ with tab5:
         st.subheader("Revenue by Payer")
         fig = px.bar(payer_mix, x="payer_name", y="total_payments",
                      color="payer_type",
+                     color_discrete_sequence=RCM_COLORS,
                      labels={"payer_name": "Payer", "total_payments": "Total Payments ($)",
                              "payer_type": "Type"})
         fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Payer Mix (by Volume)")
         fig = px.pie(payer_mix, values="claim_count", names="payer_name",
-                     color_discrete_sequence=px.colors.qualitative.Set3)
+                     color_discrete_sequence=RCM_COLORS)
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Collection rate by payer
     col_left2, col_right2 = st.columns(2)
@@ -821,7 +854,7 @@ with tab5:
                      color_continuous_scale="RdYlGn",
                      labels={"collection_rate": "Collection Rate (%)", "payer_name": "Payer"})
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right2:
         st.subheader("Denial Rate by Payer")
@@ -831,7 +864,7 @@ with tab5:
                      color_continuous_scale="RdYlGn_r",
                      labels={"denial_rate": "Denial Rate (%)", "payer_name": "Payer"})
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Payer comparison table
     st.subheader("Payer Comparison Table")
@@ -859,9 +892,10 @@ with tab5:
     type_summary["collection_rate"] = (type_summary["payments"] / type_summary["charges"] * 100).round(2)
     fig = px.bar(type_summary, x="payer_type", y=["charges", "payments"],
                  barmode="group",
+                 color_discrete_sequence=RCM_COLORS,
                  labels={"value": "Amount ($)", "payer_type": "Payer Type", "variable": "Metric"})
     fig.update_layout(height=350, margin=dict(t=30, b=30))
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # ── Payer Drill-Down ──────────────────────────────────────────────
     st.divider()
@@ -891,9 +925,9 @@ with tab5:
             status_counts.columns = ["Status", "Count"]
             fig = px.pie(status_counts, values="Count", names="Status",
                          title="Claim Status Mix",
-                         color_discrete_sequence=px.colors.qualitative.Set2)
+                         color_discrete_sequence=RCM_COLORS)
             fig.update_layout(height=300, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
         with col_d2:
             if not drill_denials.empty:
                 denial_reasons_drill = drill_denials["denial_reason_description"].value_counts().reset_index()
@@ -903,7 +937,7 @@ with tab5:
                              labels={"Count": "# Denials", "Reason": ""})
                 fig.update_layout(height=300, margin=dict(t=40, b=10),
                                   yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, theme="streamlit", width="stretch")
             else:
                 st.info("No denials for this payer in the selected date range.")
 
@@ -945,9 +979,10 @@ with tab6:
         st.subheader("Revenue by Department")
         fig = px.bar(dept_perf, x="department", y=["total_charges", "total_payments"],
                      barmode="group",
+                     color_discrete_sequence=RCM_COLORS,
                      labels={"value": "Amount ($)", "department": "Department", "variable": "Metric"})
         fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Collection Rate by Department")
@@ -957,34 +992,35 @@ with tab6:
                      color_continuous_scale="RdYlGn",
                      labels={"collection_rate": "Collection Rate (%)", "department": "Department"})
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Encounter volume by department
     col_left2, col_right2 = st.columns(2)
     with col_left2:
         st.subheader("Encounter Volume by Department")
         fig = px.pie(dept_perf, values="encounter_count", names="department",
-                     color_discrete_sequence=px.colors.qualitative.Pastel)
+                     color_discrete_sequence=RCM_COLORS)
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right2:
         st.subheader("Avg Payment per Encounter")
         fig = px.bar(dept_perf.sort_values("avg_payment_per_encounter"),
                      x="avg_payment_per_encounter", y="department", orientation="h",
                      color="avg_payment_per_encounter",
-                     color_continuous_scale="Viridis",
+                     color_continuous_scale="Blues",
                      labels={"avg_payment_per_encounter": "Avg $/Encounter", "department": "Department"})
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Department encounter type breakdown
     st.subheader("Encounter Type by Department")
     dept_enc = f_encounters.groupby(["department", "encounter_type"]).size().reset_index(name="count")
     fig = px.bar(dept_enc, x="department", y="count", color="encounter_type",
+                 color_discrete_sequence=RCM_COLORS,
                  labels={"count": "Count", "department": "Department", "encounter_type": "Type"})
     fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Department table
     st.subheader("Department Performance Summary")
@@ -1029,18 +1065,18 @@ with tab6:
             enc_type_counts.columns = ["Type", "Count"]
             fig = px.pie(enc_type_counts, values="Count", names="Type",
                          title="Encounter Type Mix",
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
+                         color_discrete_sequence=RCM_COLORS)
             fig.update_layout(height=300, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
         with col_dd2:
             status_counts_dept = drill_dept_claims["claim_status"].value_counts().reset_index()
             status_counts_dept.columns = ["Status", "Count"]
             fig = px.bar(status_counts_dept, x="Status", y="Count",
                          title="Claim Status",
                          color="Status",
-                         color_discrete_sequence=px.colors.qualitative.Set2)
+                         color_discrete_sequence=RCM_COLORS)
             fig.update_layout(height=300, margin=dict(t=40, b=10), showlegend=False)
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
 
         with st.expander("Encounter & Claim Detail"):
             enc_detail = drill_encs[["encounter_id", "date_of_service", "encounter_type",

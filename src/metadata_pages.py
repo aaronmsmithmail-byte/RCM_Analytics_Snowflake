@@ -90,7 +90,7 @@ def _draw_network_graph(nodes, edges, title, height=600):
         margin=dict(l=20, r=20, t=50, b=20),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
 
 # ── KPI catalog data ──────────────────────────────────────────────────
@@ -489,7 +489,7 @@ def render_data_lineage():
         margin=dict(l=20, r=20, t=55, b=20),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # ── Medallion pipeline stages table ───────────────────────────────
     st.subheader("Medallion Pipeline Stages")
