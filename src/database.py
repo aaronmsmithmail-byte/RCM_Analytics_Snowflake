@@ -894,7 +894,7 @@ def initialize_database(db_path=None):
     # column existed (existing databases won't have it from CREATE TABLE alone).
     try:
         conn.execute("ALTER TABLE meta_kg_nodes ADD COLUMN source_system TEXT;")
-    except Exception:
+    except sqlite3.OperationalError:
         pass  # Column already exists — safe to ignore
     conn.commit()
     print("  [OK] Legacy tables cleared.\n")

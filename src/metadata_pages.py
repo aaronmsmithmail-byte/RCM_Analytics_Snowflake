@@ -654,7 +654,7 @@ def render_data_lineage():
     st.dataframe(
         pd.DataFrame([
             {"Source System": sys, "CSV Files": ", ".join(files)}
-            for sys, files in seen.items()
+            for sys, files in sorted(seen.items())
         ]),
         use_container_width=True,
         hide_index=True,
