@@ -317,16 +317,16 @@ params = FilterParams(
 # every page, including metadata pages that call st.stop() early.
 st.sidebar.divider()
 st.sidebar.markdown("### Metadata")
-if st.sidebar.button("Data Catalog", use_container_width=True):
+if st.sidebar.button("Data Catalog", width="stretch"):
     st.session_state["active_page"] = "data_catalog"
-if st.sidebar.button("Data Lineage", use_container_width=True):
+if st.sidebar.button("Data Lineage", width="stretch"):
     st.session_state["active_page"] = "data_lineage"
-if st.sidebar.button("Knowledge Graph", use_container_width=True):
+if st.sidebar.button("Knowledge Graph", width="stretch"):
     st.session_state["active_page"] = "knowledge_graph"
-if st.sidebar.button("Semantic Layer", use_container_width=True):
+if st.sidebar.button("Semantic Layer", width="stretch"):
     st.session_state["active_page"] = "semantic_layer"
 if st.session_state["active_page"] != "dashboard":
-    if st.sidebar.button("Back to Dashboard", type="primary", use_container_width=True):
+    if st.sidebar.button("Back to Dashboard", type="primary", width="stretch"):
         st.session_state["active_page"] = "dashboard"
 
 # ── Page router ──────────────────────────────────────────────────────
@@ -426,7 +426,7 @@ with tab1:
                       labels={"year_month": "Month", "days_in_ar": "Days in A/R"})
         fig.add_hline(y=35, line_dash="dash", line_color="green", annotation_text="Benchmark: 35 days")
         fig.update_layout(height=350, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right:
         st.subheader("Net Collection Rate Trend")
@@ -434,7 +434,7 @@ with tab1:
                       labels={"year_month": "Month", "ncr": "NCR (%)"})
         fig.add_hline(y=95, line_dash="dash", line_color="green", annotation_text="Benchmark: 95%")
         fig.update_layout(height=350, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Volume summary
     st.subheader("Monthly Volume")
@@ -454,7 +454,7 @@ with tab1:
     fig.add_trace(go.Bar(x=vol["year_month"], y=vol["claims"], name="Claims", marker_color="#764ba2"))
     fig.update_layout(barmode="group", height=350, margin=dict(t=30, b=30),
                       xaxis_title="Month", yaxis_title="Count")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # =====================================================================
@@ -512,7 +512,7 @@ with tab2:
         textposition="outside",
     ))
     fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Collection rate trends
     col_left, col_right = st.columns(2)
@@ -522,7 +522,7 @@ with tab2:
         combined_trend.columns = ["Month", "Gross Collection Rate", "Net Collection Rate"]
         fig = px.line(combined_trend, x="Month", y=["Gross Collection Rate", "Net Collection Rate"])
         fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis_title="%")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right:
         st.subheader("Cost to Collect Trend")
@@ -530,14 +530,14 @@ with tab2:
                       labels={"year_month": "Month", "cost_to_collect_pct": "Cost to Collect (%)"})
         fig.add_hline(y=5, line_dash="dash", line_color="green", annotation_text="Target: 5%")
         fig.update_layout(height=350, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Avg reimbursement trend
     st.subheader("Average Reimbursement per Claim")
     fig = px.bar(reimb_trend.reset_index(), x="year_month", y="payment_amount",
                  labels={"year_month": "Month", "payment_amount": "Avg Reimbursement ($)"})
     fig.update_layout(height=300, margin=dict(t=30, b=30))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Financial summary
     st.subheader("Financial Summary")
@@ -553,7 +553,7 @@ with tab2:
         ]
     }
     fin_df = pd.DataFrame(fin_data)
-    st.dataframe(fin_df, hide_index=True, use_container_width=True)
+    st.dataframe(fin_df, hide_index=True, width="stretch")
     export_buttons("collections_revenue", {
         "Financial Summary": fin_df,
         "Filtered Claims": f_claims,
@@ -607,7 +607,7 @@ with tab3:
         fig = px.pie(status_counts, values="Count", names="Status",
                      color_discrete_sequence=px.colors.qualitative.Set2)
         fig.update_layout(height=350, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right:
         st.subheader("Top Denial Reasons")
@@ -617,7 +617,7 @@ with tab3:
                      labels={"count": "Denial Count", "denial_reason_description": "Reason",
                              "total_denied_amount": "$ Denied"})
         fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis={"categoryorder": "total ascending"})
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Denial & Clean Claim trends
     col_left2, col_right2 = st.columns(2)
@@ -627,7 +627,7 @@ with tab3:
                       labels={"year_month": "Month", "denial_rate": "Denial Rate (%)"})
         fig.add_hline(y=10, line_dash="dash", line_color="green", annotation_text="Target: 10%")
         fig.update_layout(height=300, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right2:
         st.subheader("Clean Claim Rate Trend")
@@ -635,7 +635,7 @@ with tab3:
                       labels={"year_month": "Month", "ccr": "Clean Claim Rate (%)"})
         fig.add_hline(y=90, line_dash="dash", line_color="green", annotation_text="Target: 90%")
         fig.update_layout(height=300, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Charge lag
     col_left3, col_right3 = st.columns(2)
@@ -647,7 +647,7 @@ with tab3:
         fig = px.bar(lag_df, x="Days", y="Count",
                      labels={"Days": "Lag (Days)", "Count": "# of Charges"})
         fig.update_layout(height=300, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right3:
         st.subheader("First-Pass Rate Trend")
@@ -655,13 +655,13 @@ with tab3:
                       labels={"year_month": "Month", "fpr": "First-Pass Rate (%)"})
         fig.add_hline(y=85, line_dash="dash", line_color="green", annotation_text="Target: 85%")
         fig.update_layout(height=300, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Denial details table
     with st.expander("Denial Reasons Detail Table"):
         denial_detail_df = denial_reasons[["denial_reason_code", "denial_reason_description", "count",
                         "total_denied_amount", "total_recovered", "recovery_rate"]].round(2)
-        st.dataframe(denial_detail_df, hide_index=True, use_container_width=True)
+        st.dataframe(denial_detail_df, hide_index=True, width="stretch")
 
     export_buttons("claims_denials", {
         "Denial Reasons": denial_detail_df,
@@ -711,14 +711,14 @@ with tab4:
                      color_discrete_sequence=["#2ecc71", "#27ae60", "#f39c12", "#e74c3c", "#c0392b"])
         fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
         fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right:
         st.subheader("A/R Aging Distribution")
         fig = px.pie(aging_df, values="Total A/R", names="Bucket",
                      color_discrete_sequence=["#2ecc71", "#27ae60", "#f39c12", "#e74c3c", "#c0392b"])
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # DAR trend
     st.subheader("Days in A/R Trend")
@@ -738,7 +738,7 @@ with tab4:
     fig.update_layout(height=400, margin=dict(t=30, b=30))
     fig.update_yaxes(title_text="A/R Balance ($)", secondary_y=False)
     fig.update_yaxes(title_text="Days in A/R", secondary_y=True)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Cash flow
     st.subheader("Monthly Cash Flow")
@@ -760,14 +760,14 @@ with tab4:
                              line=dict(color="#e74c3c", width=2, dash="dot")))
     fig.update_layout(barmode="group", height=400, margin=dict(t=30, b=30),
                       yaxis_title="Amount ($)")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # A/R aging table
     with st.expander("A/R Aging Detail"):
         aging_detail = aging_df.copy()
         aging_detail["Total A/R"] = aging_detail["Total A/R"].apply(lambda x: f"${x:,.2f}")
         aging_detail["% of Total"] = aging_detail["% of Total"].apply(lambda x: f"{x:.1f}%")
-        st.dataframe(aging_detail, hide_index=True, use_container_width=True)
+        st.dataframe(aging_detail, hide_index=True, width="stretch")
 
     export_buttons("ar_aging_cashflow", {
         "AR Aging Summary": aging_df,
@@ -802,14 +802,14 @@ with tab5:
                      labels={"payer_name": "Payer", "total_payments": "Total Payments ($)",
                              "payer_type": "Type"})
         fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right:
         st.subheader("Payer Mix (by Volume)")
         fig = px.pie(payer_mix, values="claim_count", names="payer_name",
                      color_discrete_sequence=px.colors.qualitative.Set3)
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Collection rate by payer
     col_left2, col_right2 = st.columns(2)
@@ -821,7 +821,7 @@ with tab5:
                      color_continuous_scale="RdYlGn",
                      labels={"collection_rate": "Collection Rate (%)", "payer_name": "Payer"})
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right2:
         st.subheader("Denial Rate by Payer")
@@ -831,7 +831,7 @@ with tab5:
                      color_continuous_scale="RdYlGn_r",
                      labels={"denial_rate": "Denial Rate (%)", "payer_name": "Payer"})
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Payer comparison table
     st.subheader("Payer Comparison Table")
@@ -841,7 +841,7 @@ with tab5:
        "collection_rate", "denial_rate"]].round(2)
     payer_table.columns = ["Payer", "Type", "Claims", "Total Charges", "Total Payments",
                            "Collection Rate (%)", "Denial Rate (%)"]
-    st.dataframe(payer_table, hide_index=True, use_container_width=True)
+    st.dataframe(payer_table, hide_index=True, width="stretch")
 
     export_buttons("payer_analysis", {
         "Payer Comparison": payer_table,
@@ -861,7 +861,7 @@ with tab5:
                  barmode="group",
                  labels={"value": "Amount ($)", "payer_type": "Payer Type", "variable": "Metric"})
     fig.update_layout(height=350, margin=dict(t=30, b=30))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # ── Payer Drill-Down ──────────────────────────────────────────────
     st.divider()
@@ -893,7 +893,7 @@ with tab5:
                          title="Claim Status Mix",
                          color_discrete_sequence=px.colors.qualitative.Set2)
             fig.update_layout(height=300, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         with col_d2:
             if not drill_denials.empty:
                 denial_reasons_drill = drill_denials["denial_reason_description"].value_counts().reset_index()
@@ -903,7 +903,7 @@ with tab5:
                              labels={"Count": "# Denials", "Reason": ""})
                 fig.update_layout(height=300, margin=dict(t=40, b=10),
                                   yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             else:
                 st.info("No denials for this payer in the selected date range.")
 
@@ -915,7 +915,7 @@ with tab5:
             claim_detail["payment_amount"] = claim_detail["payment_amount"].fillna(0)
             claim_detail.columns = ["Claim ID", "Date of Service", "Submission Date",
                                      "Charge Amount", "Status", "Clean Claim", "Payment Amount"]
-            st.dataframe(claim_detail, hide_index=True, use_container_width=True)
+            st.dataframe(claim_detail, hide_index=True, width="stretch")
             export_buttons(f"payer_drilldown_{selected_drilldown_payer.replace(' ', '_')}", {
                 "Claims": claim_detail,
                 "Denials": drill_denials,
@@ -947,7 +947,7 @@ with tab6:
                      barmode="group",
                      labels={"value": "Amount ($)", "department": "Department", "variable": "Metric"})
         fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right:
         st.subheader("Collection Rate by Department")
@@ -957,7 +957,7 @@ with tab6:
                      color_continuous_scale="RdYlGn",
                      labels={"collection_rate": "Collection Rate (%)", "department": "Department"})
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Encounter volume by department
     col_left2, col_right2 = st.columns(2)
@@ -966,7 +966,7 @@ with tab6:
         fig = px.pie(dept_perf, values="encounter_count", names="department",
                      color_discrete_sequence=px.colors.qualitative.Pastel)
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right2:
         st.subheader("Avg Payment per Encounter")
@@ -976,7 +976,7 @@ with tab6:
                      color_continuous_scale="Viridis",
                      labels={"avg_payment_per_encounter": "Avg $/Encounter", "department": "Department"})
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Department encounter type breakdown
     st.subheader("Encounter Type by Department")
@@ -984,7 +984,7 @@ with tab6:
     fig = px.bar(dept_enc, x="department", y="count", color="encounter_type",
                  labels={"count": "Count", "department": "Department", "encounter_type": "Type"})
     fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Department table
     st.subheader("Department Performance Summary")
@@ -995,7 +995,7 @@ with tab6:
     dept_table["avg_payment_per_encounter"] = dept_table["avg_payment_per_encounter"].apply(lambda x: f"${x:,.2f}")
     dept_table.columns = ["Department", "Encounters", "Total Charges", "Total Payments",
                           "Collection Rate", "Avg $/Encounter"]
-    st.dataframe(dept_table, hide_index=True, use_container_width=True)
+    st.dataframe(dept_table, hide_index=True, width="stretch")
     export_buttons("department_performance", {
         "Department Summary": dept_perf,
         "Encounter Type Mix": dept_enc,
@@ -1031,7 +1031,7 @@ with tab6:
                          title="Encounter Type Mix",
                          color_discrete_sequence=px.colors.qualitative.Pastel)
             fig.update_layout(height=300, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         with col_dd2:
             status_counts_dept = drill_dept_claims["claim_status"].value_counts().reset_index()
             status_counts_dept.columns = ["Status", "Count"]
@@ -1040,7 +1040,7 @@ with tab6:
                          color="Status",
                          color_discrete_sequence=px.colors.qualitative.Set2)
             fig.update_layout(height=300, margin=dict(t=40, b=10), showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         with st.expander("Encounter & Claim Detail"):
             enc_detail = drill_encs[["encounter_id", "date_of_service", "encounter_type",
@@ -1055,7 +1055,7 @@ with tab6:
             enc_detail.columns = ["Encounter ID", "Date of Service", "Encounter Type",
                                    "Patient ID", "Provider ID", "Claim ID",
                                    "Charge Amount", "Claim Status", "Payment Amount"]
-            st.dataframe(enc_detail, hide_index=True, use_container_width=True)
+            st.dataframe(enc_detail, hide_index=True, width="stretch")
             export_buttons(f"dept_drilldown_{selected_drilldown_dept.replace(' ', '_')}", {
                 "Encounters & Claims": enc_detail,
                 "Denials": drill_dept_denials,
