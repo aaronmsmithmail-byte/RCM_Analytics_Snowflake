@@ -4,7 +4,7 @@ A comprehensive Streamlit web application for monitoring and analyzing Healthcar
 
 ## Overview
 
-This dashboard provides healthcare organizations with interactive visualizations across eleven analytical tabs plus four metadata pages:
+This dashboard provides healthcare organizations with interactive visualizations across twelve analytical tabs plus five metadata pages:
 
 | Tab | Description |
 |-----|-------------|
@@ -19,10 +19,13 @@ This dashboard provides healthcare organizations with interactive visualizations
 | **Underpayment Analysis** | ERA allowed vs. paid variance — contractual recovery opportunity by payer |
 | **📈 Forecasting** | Linear trend projections for cash flow, DAR, and denial rate + interactive what-if scenario modelling |
 | **Patient Responsibility** | Patient-owed portion (co-pay/deductible/coinsurance) by payer, department, and encounter type |
+| **AI Assistant** | Natural-language chat interface — asks questions, queries the database live via tool calling, and explains results in plain language |
 
-**Metadata pages** (sidebar navigation): Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer
+**Metadata pages** (sidebar navigation): Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer · AI Architecture
 
 Every data tab includes **CSV and Excel export buttons**. A **KPI alert system** in the sidebar flags threshold breaches in real time, and a **data pipeline freshness panel** shows the last ETL run time and status for each of the 10 data domains.
+
+The **AI Assistant** tab uses an agentic tool-calling loop: the model can call `run_sql()` to execute live SELECT queries against the SQLite database, receive the results, and weave them into its answer — all within a single conversational turn.  Requires a free [OpenRouter](https://openrouter.ai/keys) API key.
 
 ---
 
@@ -81,7 +84,23 @@ On first launch, the app automatically loads these CSVs into a local SQLite data
 
 > **Schema migration:** If you regenerate sample data after a previous run, the app detects the schema version automatically and rebuilds all three medallion layers cleanly.
 
-### 5. Run the dashboard
+### 5. (Optional) Configure the AI Assistant
+
+Create a `.env` file in the project root with your OpenRouter API key:
+
+```
+OPENROUTER_API_KEY=your_key_here
+```
+
+Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys).  The AI tab is disabled (shows a warning) when the key is absent — all other tabs work without it.
+
+You can also override the default model:
+
+```
+OPENROUTER_MODEL=anthropic/claude-3-5-sonnet
+```
+
+### 6. Run the dashboard
 
 ```bash
 streamlit run app.py
@@ -135,10 +154,11 @@ A shared `WITH filtered_claims AS (...)` CTE joins `silver_claims` to `silver_en
 
 ```
 RCM_Analytics_test/
-├── app.py                   # Main Streamlit dashboard (11 tabs + sidebar)
+├── app.py                   # Main Streamlit dashboard (12 tabs + sidebar)
 ├── generate_sample_data.py  # Synthetic data generation script
 ├── requirements.txt         # Python dependencies
 ├── Dockerfile               # Container build for deployment
+├── .env                     # OPENROUTER_API_KEY (not committed — create locally)
 ├── .streamlit/
 │   └── config.toml          # Streamlit server and theme settings
 ├── .github/
@@ -149,8 +169,11 @@ RCM_Analytics_test/
 │   ├── __init__.py
 │   ├── database.py          # Medallion schema, ETL, build_filter_cte(), schema migration
 │   ├── data_loader.py       # Sidebar widget population helpers
-│   ├── metadata_pages.py    # Data Catalog, Data Lineage, Knowledge Graph, Semantic Layer
+│   ├── metadata_pages.py    # Data Catalog, Data Lineage, Knowledge Graph, Semantic Layer,
+│   │                        #   AI Architecture (process flow diagram)
 │   ├── metrics.py           # SQL-based KPI engine (23 query_* functions + FilterParams)
+│   ├── ai_chat.py           # AI Assistant backend: TOOL_SCHEMA, execute_sql_tool(),
+│   │                        #   run_agentic_turn(), build_system_prompt()
 │   └── validators.py        # SQL COUNT-based data integrity checks
 └── tests/
     ├── __init__.py
@@ -261,12 +284,24 @@ Analyses the patient-owed portion of the revenue cycle — co-pays, deductibles,
 
 Summary KPIs: total patient responsibility, patient responsibility rate (% of allowed), avg per claim, self-pay exposure. Charts: total patient responsibility by payer (colored by % of allowed), by payer type with rate labels, monthly trend, by department and encounter type. Payer detail table with export.
 
+### Tab 12 — AI Assistant
+
+A conversational interface backed by an **agentic tool-calling loop**:
+
+1. A system prompt is built fresh each turn from the four `meta_*` tables (KPI definitions, semantic mappings, entity descriptions, relationships) plus the current live KPI values and active sidebar filters.
+2. The selected model (via OpenRouter) reasons over the context and decides whether to answer from the snapshot or call `run_sql()`.
+3. `run_sql()` executes a read-only SELECT/WITH query against the SQLite database, returns structured results (capped at 100 rows), and feeds them back to the model.  The loop repeats until the model returns a final text response.
+4. Each SQL query issued by the model is shown in a collapsible expander with the exact SQL and a scrollable results table.
+
+**Setup:** add `OPENROUTER_API_KEY=<your_key>` to a `.env` file in the project root and restart the app.  Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys).
+
 ### Metadata Pages (sidebar navigation)
 
 - **Data Catalog** — Searchable reference of all 23 KPIs and 10 data tables with descriptions, formulas, and source columns
 - **Data Lineage** — DAG diagram showing the full pipeline: CSV files → Bronze → Silver → Gold → Dashboard
 - **Knowledge Graph** — Entity-relationship diagram of the Silver-layer data model
 - **Semantic Layer** — Business concept → KPI → source table/column mapping for every metric
+- **AI Architecture** — Interactive process flow diagram showing how the AI chat tab assembles context from the semantic layer and knowledge graph, routes through the LLM, and executes live SQL queries to answer questions
 
 ---
 
@@ -347,6 +382,8 @@ pytest tests/ -v
 | plotly | ≥ 5.18.0 | Interactive visualizations |
 | numpy | ≥ 1.24.0 | Numerical calculations and trend extrapolation |
 | openpyxl | ≥ 3.1.0 | Excel export support |
+| openai | ≥ 1.0.0 | OpenRouter API client (OpenAI-compatible) for the AI tab |
+| python-dotenv | ≥ 1.0.0 | Loads `OPENROUTER_API_KEY` from the `.env` file |
 | streamlit-shadcn-ui | latest | Polished KPI metric cards |
 | streamlit-extras | latest | Metric card styling |
 | pytest | ≥ 7.0.0 | Unit testing (dev) |

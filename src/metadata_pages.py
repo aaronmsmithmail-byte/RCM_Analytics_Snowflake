@@ -2,11 +2,14 @@
 Metadata Pages for Healthcare RCM Analytics Dashboard
 ======================================================
 
-This module contains four supplemental pages accessible from the sidebar:
-  - Data Catalog      : Searchable table of all 17 KPIs + 10 data tables
-  - Data Lineage      : DAG showing the full pipeline from CSV to dashboard
-  - Knowledge Graph   : Entity-relationship diagram of the 10 data entities
-  - Semantic Layer    : Business concept → KPI → raw column mapping
+This module contains five supplemental pages accessible from the sidebar:
+  - Data Catalog        : Searchable table of all 23 KPIs + 10 data tables
+  - Data Lineage        : DAG showing the full pipeline from CSV to dashboard
+  - Knowledge Graph     : Entity-relationship diagram of the 10 data entities
+  - Semantic Layer      : Business concept → KPI → raw column mapping
+  - AI Architecture     : Process diagram — how the AI chat tab uses the
+                          semantic layer, knowledge graph, and SQL tool loop
+                          to answer natural-language RCM questions
 
 Each render_*() function is called from app.py based on st.session_state["active_page"].
 """
@@ -779,7 +782,321 @@ Sidebar Selections
   silver_encounters  (JOIN filtered_claims ON encounter_id)
   silver_charges     (via silver_encounters ON encounter_id)
 
-All 17 query_* functions use this CTE — filters applied at the database level, not in memory.
+All 23 query_* functions use this CTE — filters applied at the database level, not in memory.
 ```
 """)
 
+
+# ── Page 5: AI Architecture ───────────────────────────────────────────
+
+def render_ai_architecture():
+    """Process diagram: how the AI chat tab answers RCM questions."""
+    st.title("AI Assistant Architecture")
+    st.caption(
+        "How the AI chat tab combines the semantic layer, knowledge graph, "
+        "live KPI snapshot, and a real-time SQL tool loop to answer "
+        "natural-language RCM questions."
+    )
+
+    st.markdown("""
+Every AI response follows a **three-stage pipeline**:
+
+| Stage | What happens |
+|-------|-------------|
+| **1 · Context assembly** | A system prompt is built fresh each turn from the four `meta_*` tables (KPI definitions, semantic mappings, entity descriptions, relationships) plus the current live KPI values and active sidebar filters. |
+| **2 · LLM reasoning** | The prompt + conversation history is sent to the selected model via OpenRouter.  The model decides whether to answer directly or call the `run_sql` tool. |
+| **3 · Tool-calling loop** | If data is needed, the model issues a `run_sql` call with a SELECT query.  The query executes against SQLite, results are fed back, and the loop repeats until the model produces a final text answer. |
+""")
+
+    # ── Process flow diagram ──────────────────────────────────────────
+    st.subheader("Process Flow Diagram")
+
+    fig = go.Figure()
+
+    # Zone backgrounds
+    # (x0, y0, x1, y1, fill, border, label, tx, ty, label_color)
+    zone_defs = [
+        (0.0,  0.0,  3.8, 11.2, "rgba( 91,141,238,0.06)", "rgba( 91,141,238,0.28)", "CONTEXT ASSEMBLY",  1.9, 10.9, "#1a3a8a"),
+        (3.8,  0.0,  7.2, 11.2, "rgba( 56,193,114,0.06)", "rgba( 56,193,114,0.28)", "LLM ENGINE",        5.5, 10.9, "#1a6e3c"),
+        (7.2,  0.0, 11.0, 11.2, "rgba(245,107,  0,0.06)", "rgba(245,107,  0,0.28)", "SQL TOOL LOOP",     9.1, 10.9, "#7a3000"),
+    ]
+    for x0, y0, x1, y1, fill, border, zlabel, tx, ty, tc in zone_defs:
+        fig.add_shape(
+            type="rect", x0=x0, y0=y0, x1=x1, y1=y1,
+            fillcolor=fill, line=dict(color=border, width=1.5), layer="below",
+        )
+        fig.add_annotation(
+            x=tx, y=ty, text=f"<b>{zlabel}</b>",
+            showarrow=False, font=dict(size=11, color=tc),
+            xanchor="center", yanchor="bottom",
+        )
+
+    # Node definitions: (id, label, x, y, color, size, group, hover_text)
+    node_defs = [
+        # ── Context assembly zone ──────────────────────────────────
+        ("meta_kpi",
+         "meta_kpi_catalog",       1.9, 9.5,
+         "#9561e2", 26, "Meta Tables",
+         "23 KPI definitions: metric name, formula, category, benchmark"),
+
+        ("meta_sem",
+         "meta_semantic_layer",    1.9, 8.3,
+         "#9561e2", 26, "Meta Tables",
+         "Business concept → KPI → silver_* column mappings + business rules"),
+
+        ("meta_kg",
+         "meta_kg_nodes\n+ edges", 1.9, 7.1,
+         "#9561e2", 26, "Meta Tables",
+         "10 Silver-layer entities + 9 foreign-key relationships"),
+
+        ("live_kpis",
+         "Live KPI\nSnapshot",     1.9, 5.6,
+         "#e8a838", 28, "Live Context",
+         "Current KPI values + active date / payer / dept / enc-type filters"),
+
+        ("sys_prompt",
+         "System\nPrompt",         1.9, 3.8,
+         "#5b6af0", 34, "Assembled Prompt",
+         "Full markdown context string prepended to every LLM request as the system message"),
+
+        # ── LLM engine zone ────────────────────────────────────────
+        ("user_q",
+         "User\nQuestion",         5.5, 9.5,
+         "#5b8dee", 32, "Input / Output",
+         "Natural-language question entered in the chat input box"),
+
+        ("llm",
+         "OpenRouter\nLLM",        5.5, 6.5,
+         "#38c172", 44, "LLM",
+         "Selected model (GPT-4o, Claude, Gemini) called via the OpenRouter gateway.\n"
+         "Receives system prompt + conversation history + tool schema.\n"
+         "Decides whether to answer directly or call run_sql."),
+
+        ("final_ans",
+         "Final\nAnswer",          5.5, 1.5,
+         "#5b8dee", 32, "Input / Output",
+         "Model's response displayed in the Streamlit chat UI"),
+
+        # ── SQL tool loop zone ─────────────────────────────────────
+        ("run_sql",
+         "run_sql()\nTool",        9.1, 9.0,
+         "#f56b00", 34, "Tool",
+         "Executes a read-only SELECT/WITH query against SQLite.\n"
+         "Safety: non-SELECT statements are rejected.\n"
+         "Results capped at 100 rows; shown in collapsible expanders."),
+
+        ("silver",
+         "silver_*\nTables",       9.1, 6.5,
+         "#7a7a7a", 28, "Database",
+         "10 cleaned Silver-layer tables:\n"
+         "claims, encounters, payers, patients, providers,\n"
+         "charges, payments, denials, adjustments, operating_costs"),
+
+        ("gold",
+         "gold_*\nViews",          9.1, 4.5,
+         "#B8860B", 28, "Database",
+         "5 pre-aggregated Gold views:\n"
+         "gold_monthly_kpis, gold_payer_performance,\n"
+         "gold_department_performance, gold_ar_aging, gold_denial_analysis"),
+
+        ("meta_tables_db",
+         "meta_*\nTables",         9.1, 2.5,
+         "#9561e2", 26, "Database",
+         "4 meta tables queried at system-prompt build time:\n"
+         "meta_kpi_catalog, meta_semantic_layer, meta_kg_nodes, meta_kg_edges"),
+    ]
+
+    # Build lookup
+    nmap = {n[0]: n for n in node_defs}
+
+    # Edge definitions: (source_id, target_id, label, color, offset)
+    # offset shifts the midpoint label slightly so overlapping edges are legible
+    edge_defs = [
+        # Meta tables → system prompt
+        ("meta_kpi",       "sys_prompt",    "KPI defs",     "#9561e2", 0),
+        ("meta_sem",       "sys_prompt",    "mappings",     "#9561e2", 0),
+        ("meta_kg",        "sys_prompt",    "schema",       "#9561e2", 0),
+        ("live_kpis",      "sys_prompt",    "snapshot",     "#e8a838", 0),
+        # System prompt + user question → LLM
+        ("sys_prompt",     "llm",           "context",      "#5b6af0", 0),
+        ("user_q",         "llm",           "question",     "#5b8dee", 0),
+        # LLM ↔ run_sql (slightly offset so both arrows are visible)
+        ("llm",            "run_sql",       "tool call",    "#38c172", +0.15),
+        ("run_sql",        "llm",           "results",      "#f56b00", -0.15),
+        # run_sql ↔ database tables
+        ("run_sql",        "silver",        "SELECT",       "#7a7a7a", +0.15),
+        ("silver",         "run_sql",       "rows",         "#7a7a7a", -0.15),
+        ("run_sql",        "gold",          "SELECT",       "#B8860B", +0.15),
+        ("gold",           "run_sql",       "rows",         "#B8860B", -0.15),
+        # meta_* tables also live in the DB (queried at prompt build time)
+        ("meta_tables_db", "sys_prompt",    "build_system\n_prompt()",  "#9561e2", 0),
+        # LLM → final answer
+        ("llm",            "final_ans",     "response",     "#38c172", 0),
+    ]
+
+    # Draw edges
+    for src_id, tgt_id, elabel, ecolor, offset in edge_defs:
+        src = nmap[src_id]
+        tgt = nmap[tgt_id]
+        fig.add_trace(go.Scatter(
+            x=[src[2], tgt[2], None],
+            y=[src[3], tgt[3], None],
+            mode="lines",
+            line=dict(width=1.8, color=ecolor),
+            hoverinfo="none",
+            showlegend=False,
+        ))
+        mx = (src[2] + tgt[2]) / 2
+        my = (src[3] + tgt[3]) / 2 + offset
+        fig.add_annotation(
+            x=mx, y=my, text=elabel,
+            showarrow=False,
+            font=dict(size=8, color=ecolor),
+            bgcolor="rgba(255,255,255,0.85)",
+            borderpad=2,
+        )
+
+    # Draw nodes grouped by color/group for the legend
+    color_groups: dict = {}
+    for nd in node_defs:
+        color_groups.setdefault(nd[6], []).append(nd)
+
+    for group, gnodes in color_groups.items():
+        fig.add_trace(go.Scatter(
+            x=[n[2] for n in gnodes],
+            y=[n[3] for n in gnodes],
+            mode="markers+text",
+            marker=dict(
+                size=[n[5] for n in gnodes],
+                color=[n[4] for n in gnodes],
+                symbol="circle",
+                line=dict(width=2, color="white"),
+            ),
+            text=[n[1] for n in gnodes],
+            textposition="bottom center",
+            textfont=dict(size=9),
+            hovertext=[n[7] for n in gnodes],
+            hoverinfo="text",
+            name=group,
+            showlegend=True,
+        ))
+
+    fig.update_layout(
+        title=dict(
+            text="AI Assistant — Request Processing Pipeline",
+            font=dict(size=14),
+            x=0.5,
+        ),
+        xaxis=dict(visible=False, range=[-0.3, 11.3]),
+        yaxis=dict(visible=False, range=[-0.3, 11.5]),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=680,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=-0.08,
+            xanchor="center", x=0.5,
+            font=dict(size=10),
+        ),
+        margin=dict(l=10, r=10, t=50, b=60),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Step-by-step breakdown ────────────────────────────────────────
+    st.subheader("Step-by-Step Breakdown")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### Stage 1 — Context Assembly")
+        st.markdown("""
+`build_system_prompt()` in `src/ai_chat.py` queries four meta tables on every turn:
+
+| Table | Content passed to LLM |
+|-------|-----------------------|
+| `meta_kpi_catalog` | 23 KPI names, formulas, categories, benchmarks |
+| `meta_semantic_layer` | Business concept → KPI → source column mappings |
+| `meta_kg_nodes` | 10 Silver-layer entity descriptions |
+| `meta_kg_edges` | 9 foreign-key relationships (join paths) |
+
+The **live KPI snapshot** appends current metric values and active sidebar
+filter state so the model can answer "what is our denial rate right now?" without
+needing to query the database.
+""")
+
+    with col2:
+        st.markdown("#### Stage 2 — LLM Reasoning")
+        st.markdown("""
+The assembled system prompt, full conversation history, and the `run_sql` tool
+schema are sent to **OpenRouter** in a single API call.
+
+The model chooses one of two paths:
+- **Answer directly** — if the KPI snapshot already contains the answer
+- **Call `run_sql`** — if a breakdown, trend, or specific record is needed
+
+The tool-calling loop runs up to **8 iterations** per turn, allowing multi-step
+queries (e.g. fetch payer list → then query denial rates per payer).
+""")
+
+    st.markdown("#### Stage 3 — SQL Tool Loop")
+    col3, col4 = st.columns(2)
+
+    with col3:
+        st.markdown("""
+**`execute_sql_tool()`** in `src/ai_chat.py`:
+
+- Accepts the query string from the model's tool call
+- Validates that it is a `SELECT` or `WITH` (CTE) statement — all other
+  statement types return an error without touching the database
+- Executes against the local SQLite database
+- Caps results at **100 rows** to stay within LLM context limits
+- Returns structured `{columns, rows, row_count, total_rows, truncated}`
+
+The formatted results are appended to the conversation as a `role: tool`
+message, giving the model full visibility into what the query returned.
+""")
+
+    with col4:
+        st.markdown("""
+**What gets queried:**
+
+| Target | When used |
+|--------|-----------|
+| `silver_*` tables | Row-level lookups, custom joins, breakdowns not in Gold views |
+| `gold_*` views | Pre-aggregated KPIs — faster for summary questions |
+| `meta_*` tables | Queried at prompt-build time only (not via the tool) |
+
+**Query results in the UI:**
+
+Each `run_sql` call appears as a collapsible expander in the chat showing
+the exact SQL and a scrollable results table. Previous turns' queries are
+preserved in session state and re-rendered on page reload.
+""")
+
+    # ── Session state diagram ─────────────────────────────────────────
+    st.subheader("Session State & History Management")
+    st.markdown("""
+Two parallel stores keep the AI tab stateful across Streamlit reruns:
+
+```
+st.session_state["ai_display_turns"]          st.session_state["ai_api_messages"]
+─────────────────────────────────────         ──────────────────────────────────────
+For rendering the chat UI                     For sending to the OpenRouter API
+
+[                                             [
+  {role: "user",    content: "..."},            {role: "user",    content: "..."},
+  {role: "assistant",                           {role: "assistant", content: "",
+   content: "Final answer text",                 tool_calls: [{id, fn, args}]},
+   queries: [                                  {role: "tool",
+     {description, sql,                         tool_call_id: "...",
+      columns, rows, truncated}                 content: "col1,col2\\nv1,v2\\n..."},
+   ]},                                         {role: "assistant",
+  ...                                           content: "Final answer text"},
+]                                             ]
+                                              (system prompt prepended fresh each turn)
+```
+
+The system prompt is **rebuilt on every turn** so new dashboard filter
+selections are automatically reflected in the AI's context.
+""")
