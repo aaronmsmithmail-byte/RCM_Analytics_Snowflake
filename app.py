@@ -106,6 +106,10 @@ from src.metrics import (                        # 17 SQL-based KPI query functi
     query_payer_mix,
     query_denial_rate_by_payer,
     query_department_performance,
+    query_provider_performance,
+    query_cpt_analysis,
+    query_underpayment_analysis,
+    query_underpayment_trend,
 )
 
 # ── Page Config ──────────────────────────────────────────────────────
@@ -385,13 +389,16 @@ if f_claims.empty:
 style_metric_cards(background_color="#ffffff", border_left_color="#1E6FBF", border_color="#e2e8f0", box_shadow=True)
 
 # ── Tabs ─────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "Executive Summary",
     "Collections & Revenue",
     "Claims & Denials",
     "A/R Aging & Cash Flow",
     "Payer Analysis",
     "Department Performance",
+    "Provider Performance",
+    "CPT Code Analysis",
+    "Underpayment Analysis",
 ])
 
 # =====================================================================
@@ -1096,6 +1103,418 @@ with tab6:
                 "Encounters & Claims": enc_detail,
                 "Denials": drill_dept_denials,
             })
+
+
+# =====================================================================
+# TAB 7: PROVIDER PERFORMANCE
+# =====================================================================
+# Breaks down RCM metrics by individual rendering provider — a key view
+# for practice managers and CFOs who need to identify which providers
+# have high denial rates, low clean claim rates, or lagging charge lag.
+#
+# Benchmark thresholds mirror industry standards and flag outliers with
+# color-coded status indicators so action items are immediately visible.
+# =====================================================================
+with tab7:
+    st.header("Provider Performance")
+
+    provider_perf = query_provider_performance(params)
+
+    if provider_perf.empty:
+        st.info("No provider data available for the selected filters.")
+    else:
+        # ── Summary KPIs ──────────────────────────────────────────────
+        avg_prov_collection = provider_perf["collection_rate"].mean()
+        avg_prov_denial = provider_perf["denial_rate"].mean()
+        avg_prov_ccr = provider_perf["clean_claim_rate"].mean()
+        outlier_count = int((provider_perf["denial_rate"] > 15).sum())
+
+        kp1, kp2, kp3, kp4 = st.columns(4)
+        with kp1:
+            cr_status = "✅" if avg_prov_collection > 95 else ("⚠️" if avg_prov_collection > 85 else "🔴")
+            ui.metric_card(title="Avg Collection Rate", content=f"{avg_prov_collection:.1f}%",
+                           description=f"{cr_status} Benchmark: > 95%", key="prov_cr")
+        with kp2:
+            dr_status = "✅" if avg_prov_denial < 10 else ("⚠️" if avg_prov_denial < 15 else "🔴")
+            ui.metric_card(title="Avg Denial Rate", content=f"{avg_prov_denial:.1f}%",
+                           description=f"{dr_status} Benchmark: < 10%", key="prov_dr")
+        with kp3:
+            ccr_status = "✅" if avg_prov_ccr > 90 else ("⚠️" if avg_prov_ccr > 80 else "🔴")
+            ui.metric_card(title="Avg Clean Claim Rate", content=f"{avg_prov_ccr:.1f}%",
+                           description=f"{ccr_status} Benchmark: > 90%", key="prov_ccr")
+        with kp4:
+            out_status = "✅" if outlier_count == 0 else ("⚠️" if outlier_count <= 3 else "🔴")
+            ui.metric_card(title="High-Denial Providers", content=f"{outlier_count}",
+                           description=f"{out_status} Denial rate > 15%", key="prov_outliers")
+
+        st.divider()
+
+        # ── Charts ────────────────────────────────────────────────────
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            st.subheader("Revenue by Provider")
+            fig = px.bar(
+                provider_perf.head(15).sort_values("total_payments"),
+                x="total_payments", y="provider_name", orientation="h",
+                color="collection_rate",
+                color_continuous_scale="RdYlGn",
+                labels={"total_payments": "Total Payments ($)", "provider_name": "",
+                        "collection_rate": "Collection Rate (%)"},
+                title="Top 15 Providers by Collections",
+            )
+            fig.update_layout(height=450, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        with col_p2:
+            st.subheader("Denial Rate by Provider")
+            fig = px.bar(
+                provider_perf.sort_values("denial_rate", ascending=False).head(15),
+                x="denial_rate", y="provider_name", orientation="h",
+                color="denial_rate",
+                color_continuous_scale="RdYlGn_r",
+                labels={"denial_rate": "Denial Rate (%)", "provider_name": ""},
+                title="Top 15 Providers by Denial Rate",
+            )
+            fig.add_vline(x=10, line_dash="dash", line_color="#F59E0B",
+                          annotation_text="10% benchmark", annotation_position="top right")
+            fig.update_layout(height=450, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        col_p3, col_p4 = st.columns(2)
+        with col_p3:
+            st.subheader("Clean Claim Rate by Provider")
+            fig = px.bar(
+                provider_perf.sort_values("clean_claim_rate").head(15),
+                x="clean_claim_rate", y="provider_name", orientation="h",
+                color="clean_claim_rate",
+                color_continuous_scale="RdYlGn",
+                labels={"clean_claim_rate": "Clean Claim Rate (%)", "provider_name": ""},
+            )
+            fig.add_vline(x=90, line_dash="dash", line_color="#F59E0B",
+                          annotation_text="90% benchmark", annotation_position="top right")
+            fig.update_layout(height=450, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        with col_p4:
+            st.subheader("Avg Payment per Encounter")
+            fig = px.bar(
+                provider_perf.sort_values("avg_payment_per_encounter", ascending=False).head(15),
+                x="avg_payment_per_encounter", y="provider_name", orientation="h",
+                color="avg_payment_per_encounter",
+                color_continuous_scale="Blues",
+                labels={"avg_payment_per_encounter": "Avg Payment / Encounter ($)", "provider_name": ""},
+            )
+            fig.update_layout(height=450, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        # ── Provider Scorecard Table ──────────────────────────────────
+        st.subheader("Provider Scorecard")
+        scorecard = provider_perf[[
+            "provider_name", "specialty", "department", "encounter_count", "claim_count",
+            "total_charges", "total_payments", "collection_rate", "denial_rate", "clean_claim_rate",
+        ]].copy().round(2)
+        scorecard.columns = [
+            "Provider", "Specialty", "Department", "Encounters", "Claims",
+            "Total Charges ($)", "Total Payments ($)", "Collection Rate (%)",
+            "Denial Rate (%)", "Clean Claim Rate (%)",
+        ]
+        st.dataframe(scorecard, hide_index=True, width="stretch")
+        export_buttons("provider_performance", {"Provider Scorecard": scorecard})
+
+        # ── Provider Drill-Down ───────────────────────────────────────
+        st.divider()
+        st.subheader("Provider Drill-Down")
+        provider_names = sorted(provider_perf["provider_name"].tolist())
+        selected_provider = st.selectbox("Select a provider to inspect", provider_names, key="provider_drilldown")
+        if selected_provider:
+            prov_row = provider_perf[provider_perf["provider_name"] == selected_provider].iloc[0]
+            prov_enc_ids = encounters[encounters["provider_id"] == prov_row["provider_id"]]["encounter_id"].unique()
+            drill_prov_claims = f_claims[f_claims["encounter_id"].isin(prov_enc_ids)].copy()
+            drill_prov_payments = f_payments[f_payments["claim_id"].isin(drill_prov_claims["claim_id"])].copy()
+            drill_prov_denials = f_denials[f_denials["claim_id"].isin(drill_prov_claims["claim_id"])].copy()
+
+            pd1, pd2, pd3, pd4 = st.columns(4)
+            with pd1:
+                st.metric("Encounters", f"{int(prov_row['encounter_count']):,}")
+            with pd2:
+                st.metric("Claims", f"{int(prov_row['claim_count']):,}")
+            with pd3:
+                cr_delta = round(prov_row["collection_rate"] - avg_prov_collection, 1)
+                st.metric("Collection Rate", f"{prov_row['collection_rate']:.1f}%",
+                          delta=f"{cr_delta:+.1f}% vs avg")
+            with pd4:
+                dr_delta = round(prov_row["denial_rate"] - avg_prov_denial, 1)
+                st.metric("Denial Rate", f"{prov_row['denial_rate']:.1f}%",
+                          delta=f"{dr_delta:+.1f}% vs avg", delta_color="inverse")
+
+            col_pd1, col_pd2 = st.columns(2)
+            with col_pd1:
+                status_counts = drill_prov_claims["claim_status"].value_counts().reset_index()
+                status_counts.columns = ["Status", "Count"]
+                fig = px.pie(status_counts, values="Count", names="Status",
+                             title="Claim Status Mix", color_discrete_sequence=RCM_COLORS)
+                fig.update_layout(height=300, margin=dict(t=40, b=10))
+                st.plotly_chart(fig, theme="streamlit", width="stretch")
+            with col_pd2:
+                if not drill_prov_denials.empty:
+                    denial_reasons_prov = drill_prov_denials["denial_reason_description"].value_counts().reset_index()
+                    denial_reasons_prov.columns = ["Reason", "Count"]
+                    fig = px.bar(denial_reasons_prov, x="Count", y="Reason", orientation="h",
+                                 title="Top Denial Reasons",
+                                 labels={"Count": "# Denials", "Reason": ""})
+                    fig.update_layout(height=300, margin=dict(t=40, b=10),
+                                      yaxis={"categoryorder": "total ascending"})
+                    st.plotly_chart(fig, theme="streamlit", width="stretch")
+                else:
+                    st.info("No denials for this provider in the selected date range.")
+
+
+# =====================================================================
+# TAB 8: CPT CODE ANALYSIS
+# =====================================================================
+# Surfaces revenue and denial patterns at the procedure-code level.
+# Billing managers use this view to identify high-denial CPT codes,
+# charge master pricing outliers, and high-volume procedures that drive
+# the most revenue — critical for contract negotiations and coding audits.
+# =====================================================================
+with tab8:
+    st.header("CPT Code Analysis")
+
+    cpt_data = query_cpt_analysis(params)
+
+    if cpt_data.empty:
+        st.info("No CPT code data available for the selected filters.")
+    else:
+        # ── Summary KPIs ──────────────────────────────────────────────
+        total_cpt_charges = cpt_data["total_charges"].sum()
+        total_cpt_codes = len(cpt_data)
+        high_denial_cpts = int((cpt_data["denial_rate"] > 15).sum())
+        top_cpt_pct = cpt_data["total_charges"].head(10).sum() / total_cpt_charges * 100 if total_cpt_charges > 0 else 0
+
+        kc1, kc2, kc3, kc4 = st.columns(4)
+        with kc1:
+            ui.metric_card(title="Distinct CPT Codes", content=f"{total_cpt_codes:,}",
+                           description="Active procedure codes billed", key="cpt_count")
+        with kc2:
+            ui.metric_card(title="Total Charges", content=f"${total_cpt_charges:,.0f}",
+                           description="Across all CPT codes", key="cpt_charges")
+        with kc3:
+            hd_status = "✅" if high_denial_cpts == 0 else ("⚠️" if high_denial_cpts <= 5 else "🔴")
+            ui.metric_card(title="High-Denial CPT Codes", content=f"{high_denial_cpts}",
+                           description=f"{hd_status} Denial rate > 15%", key="cpt_highdeny")
+        with kc4:
+            ui.metric_card(title="Top-10 CPT Concentration", content=f"{top_cpt_pct:.1f}%",
+                           description="Revenue share from top 10 codes", key="cpt_concentration")
+
+        st.divider()
+
+        # ── Charts ────────────────────────────────────────────────────
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            st.subheader("Top CPT Codes by Revenue")
+            top_cpt = cpt_data.head(15).copy()
+            top_cpt["label"] = top_cpt["cpt_code"] + " — " + top_cpt["cpt_description"].str[:30]
+            fig = px.bar(
+                top_cpt.sort_values("total_charges"),
+                x="total_charges", y="label", orientation="h",
+                color="denial_rate",
+                color_continuous_scale="RdYlGn_r",
+                labels={"total_charges": "Total Charges ($)", "label": "",
+                        "denial_rate": "Denial Rate (%)"},
+                title="Top 15 CPT Codes (color = denial rate)",
+            )
+            fig.update_layout(height=450, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        with col_c2:
+            st.subheader("Top CPT Codes by Denial Rate")
+            high_vol = cpt_data[cpt_data["charge_count"] >= 10].copy()
+            high_vol["label"] = high_vol["cpt_code"] + " — " + high_vol["cpt_description"].str[:25]
+            fig = px.bar(
+                high_vol.sort_values("denial_rate", ascending=False).head(15),
+                x="denial_rate", y="label", orientation="h",
+                color="total_charges",
+                color_continuous_scale="Blues",
+                labels={"denial_rate": "Denial Rate (%)", "label": "",
+                        "total_charges": "Total Charges ($)"},
+                title="Highest Denial Rate (min 10 charges, color = revenue)",
+            )
+            fig.add_vline(x=10, line_dash="dash", line_color="#F59E0B",
+                          annotation_text="10% benchmark")
+            fig.update_layout(height=450, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        col_c3, col_c4 = st.columns(2)
+        with col_c3:
+            st.subheader("Charge Volume by CPT Code")
+            fig = px.pie(
+                cpt_data.head(12),
+                values="total_charges", names="cpt_code",
+                title="Revenue Share — Top 12 CPT Codes",
+                color_discrete_sequence=RCM_COLORS,
+            )
+            fig.update_layout(height=400, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        with col_c4:
+            st.subheader("Avg Charge per Unit by CPT Code")
+            fig = px.bar(
+                cpt_data.sort_values("avg_charge_per_unit", ascending=False).head(15),
+                x="avg_charge_per_unit", y="cpt_code", orientation="h",
+                color="avg_charge_per_unit",
+                color_continuous_scale="Blues",
+                labels={"avg_charge_per_unit": "Avg Charge per Unit ($)", "cpt_code": "CPT Code"},
+                title="Top 15 CPT Codes by Avg Charge per Unit",
+            )
+            fig.update_layout(height=400, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        # ── CPT Detail Table ──────────────────────────────────────────
+        st.subheader("CPT Code Detail")
+        cpt_table = cpt_data[[
+            "cpt_code", "cpt_description", "charge_count", "total_units",
+            "total_charges", "avg_charge_per_unit", "claim_count", "denied_claims", "denial_rate",
+        ]].copy().round(2)
+        cpt_table.columns = [
+            "CPT Code", "Description", "Charge Count", "Total Units",
+            "Total Charges ($)", "Avg Charge/Unit ($)", "Claims", "Denied Claims", "Denial Rate (%)",
+        ]
+        st.dataframe(cpt_table, hide_index=True, width="stretch")
+        export_buttons("cpt_code_analysis", {"CPT Code Analysis": cpt_table})
+
+
+# =====================================================================
+# TAB 9: UNDERPAYMENT ANALYSIS
+# =====================================================================
+# Compares what payers actually remitted (payment_amount) against what
+# they were contractually obligated to pay (allowed_amount from the ERA).
+# The gap is a recovery opportunity — identifying systematic underpayments
+# by payer is one of the highest-ROI activities in enterprise RCM.
+# =====================================================================
+with tab9:
+    st.header("Underpayment Analysis")
+    st.caption("Compares ERA allowed amounts vs. actual payments to surface contractual underpayments.")
+
+    underpay_df, total_recovery = query_underpayment_analysis(params)
+    underpay_trend = query_underpayment_trend(params)
+
+    if underpay_df.empty:
+        st.info("No underpayment data available for the selected filters.")
+    else:
+        total_allowed = underpay_df["total_allowed"].sum()
+        total_paid = underpay_df["total_paid"].sum()
+        overall_underpay_rate = (total_recovery / total_allowed * 100) if total_allowed > 0 else 0
+        total_underpaid_claims = int(underpay_df["underpaid_count"].sum())
+
+        # ── Summary KPIs ──────────────────────────────────────────────
+        ku1, ku2, ku3, ku4 = st.columns(4)
+        with ku1:
+            ui.metric_card(title="Recovery Opportunity", content=f"${total_recovery:,.0f}",
+                           description="Total contractual underpayments", key="underpay_opp")
+        with ku2:
+            ur_status = "✅" if overall_underpay_rate < 1 else ("⚠️" if overall_underpay_rate < 3 else "🔴")
+            ui.metric_card(title="Underpayment Rate", content=f"{overall_underpay_rate:.2f}%",
+                           description=f"{ur_status} Allowed vs. paid variance", key="underpay_rate")
+        with ku3:
+            ui.metric_card(title="Underpaid Claims", content=f"{total_underpaid_claims:,}",
+                           description="Claims paid below contracted rate", key="underpay_claims")
+        with ku4:
+            avg_underpay = total_recovery / total_underpaid_claims if total_underpaid_claims > 0 else 0
+            ui.metric_card(title="Avg Underpayment / Claim", content=f"${avg_underpay:,.2f}",
+                           description="Average shortfall per underpaid claim", key="underpay_avg")
+
+        st.divider()
+
+        # ── Charts ────────────────────────────────────────────────────
+        col_u1, col_u2 = st.columns(2)
+        with col_u1:
+            st.subheader("Recovery Opportunity by Payer")
+            fig = px.bar(
+                underpay_df.sort_values("total_underpaid", ascending=False),
+                x="total_underpaid", y="payer_name", orientation="h",
+                color="underpayment_rate",
+                color_continuous_scale="RdYlGn_r",
+                labels={"total_underpaid": "Underpayment Amount ($)", "payer_name": "",
+                        "underpayment_rate": "Underpayment Rate (%)"},
+                title="Total Underpayments by Payer (color = rate)",
+            )
+            fig.update_layout(height=400, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        with col_u2:
+            st.subheader("Underpayment Rate by Payer")
+            fig = px.bar(
+                underpay_df.sort_values("underpayment_rate", ascending=False),
+                x="underpayment_rate", y="payer_name", orientation="h",
+                color="total_underpaid",
+                color_continuous_scale="Reds",
+                labels={"underpayment_rate": "Underpayment Rate (%)", "payer_name": "",
+                        "total_underpaid": "$ Underpaid"},
+                title="Underpayment Rate by Payer (color = dollar amount)",
+            )
+            fig.update_layout(height=400, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        # ── Monthly Trend ─────────────────────────────────────────────
+        if not underpay_trend.empty:
+            st.subheader("Monthly Underpayment Trend")
+            col_u3, col_u4 = st.columns(2)
+            with col_u3:
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=underpay_trend.index, y=underpay_trend["total_underpaid"],
+                    name="Underpayment Amount", marker_color=RCM_COLORS[3],
+                ))
+                fig.update_layout(
+                    height=320, margin=dict(t=40, b=10),
+                    yaxis_title="Amount ($)", xaxis_title="Month",
+                    title="Monthly Underpayment Dollars",
+                )
+                st.plotly_chart(fig, theme="streamlit", width="stretch")
+            with col_u4:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=underpay_trend.index, y=underpay_trend["underpayment_rate"],
+                    mode="lines+markers", name="Underpayment Rate",
+                    line=dict(color=RCM_COLORS[3], width=2),
+                ))
+                fig.add_hline(y=1, line_dash="dash", line_color=RCM_COLORS[2],
+                              annotation_text="1% target", annotation_position="bottom right")
+                fig.update_layout(
+                    height=320, margin=dict(t=40, b=10),
+                    yaxis_title="Rate (%)", xaxis_title="Month",
+                    title="Monthly Underpayment Rate",
+                )
+                st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        # ── Allowed vs. Paid Waterfall ────────────────────────────────
+        st.subheader("Allowed vs. Paid vs. Underpaid — by Payer")
+        waterfall_df = underpay_df.sort_values("total_allowed", ascending=False)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(name="Paid", x=waterfall_df["payer_name"],
+                             y=waterfall_df["total_paid"], marker_color=RCM_COLORS[1]))
+        fig.add_trace(go.Bar(name="Underpaid (Recovery Opportunity)", x=waterfall_df["payer_name"],
+                             y=waterfall_df["total_underpaid"], marker_color=RCM_COLORS[3]))
+        fig.update_layout(
+            barmode="stack", height=380, margin=dict(t=40, b=60),
+            yaxis_title="Amount ($)", xaxis_title="Payer",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            xaxis_tickangle=-30,
+        )
+        st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        # ── Underpayment Detail Table ─────────────────────────────────
+        st.subheader("Underpayment Summary by Payer")
+        underpay_table = underpay_df[[
+            "payer_name", "payer_type", "payment_count", "total_allowed",
+            "total_paid", "total_underpaid", "underpaid_count", "underpayment_rate",
+        ]].copy().round(2)
+        underpay_table.columns = [
+            "Payer", "Payer Type", "Payment Count", "Total Allowed ($)",
+            "Total Paid ($)", "Underpaid Amount ($)", "Underpaid Claims", "Underpayment Rate (%)",
+        ]
+        st.dataframe(underpay_table, hide_index=True, width="stretch")
+        export_buttons("underpayment_analysis", {"Underpayment by Payer": underpay_table})
 
 
 # ── Sidebar Footer ───────────────────────────────────────────────────
