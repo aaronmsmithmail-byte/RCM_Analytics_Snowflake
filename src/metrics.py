@@ -802,3 +802,454 @@ ORDER BY total_payments DESC
         0,
     )
     return df
+
+
+# ===========================================================================
+# 18. PROVIDER PERFORMANCE
+# ===========================================================================
+
+def query_provider_performance(p: FilterParams, db_path=None):
+    """Calculate revenue cycle KPIs by individual provider.
+
+    Joins encounters → providers so every claim is attributed to the rendering
+    provider.  Metrics include collection rate, denial rate, clean claim rate,
+    and average payment per encounter — the standard set used for provider
+    scorecards in enterprise RCM systems.
+
+    Returns:
+        DataFrame with columns [provider_id, provider_name, specialty,
+        department, encounter_count, claim_count, total_charges, total_payments,
+        collection_rate, denial_rate, clean_claim_rate, avg_payment_per_encounter],
+        sorted by total_payments descending.
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+, provider_claims AS (
+    SELECT pr.provider_id,
+           pr.provider_name,
+           pr.specialty,
+           pr.department,
+           COUNT(DISTINCT fc.encounter_id)                          AS encounter_count,
+           COUNT(DISTINCT fc.claim_id)                              AS claim_count,
+           SUM(fc.total_charge_amount)                              AS total_charges,
+           SUM(fc.is_clean_claim)                                   AS clean_claims,
+           SUM(CASE WHEN fc.claim_status IN ('Denied','Appealed')
+                    THEN 1 ELSE 0 END)                              AS denied_claims
+    FROM filtered_claims fc
+    JOIN silver_encounters e  ON fc.encounter_id = e.encounter_id
+    JOIN silver_providers  pr ON e.provider_id   = pr.provider_id
+    GROUP BY pr.provider_id, pr.provider_name, pr.specialty, pr.department
+), provider_payments AS (
+    SELECT e.provider_id,
+           COALESCE(SUM(p.payment_amount), 0) AS total_payments
+    FROM filtered_claims fc
+    JOIN silver_encounters e ON fc.encounter_id = e.encounter_id
+    LEFT JOIN silver_payments p ON fc.claim_id  = p.claim_id
+    GROUP BY e.provider_id
+)
+SELECT pc.provider_id,
+       pc.provider_name,
+       pc.specialty,
+       pc.department,
+       pc.encounter_count,
+       pc.claim_count,
+       pc.total_charges,
+       COALESCE(pp.total_payments, 0) AS total_payments,
+       pc.clean_claims,
+       pc.denied_claims
+FROM provider_claims pc
+LEFT JOIN provider_payments pp ON pc.provider_id = pp.provider_id
+ORDER BY total_payments DESC
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "provider_id", "provider_name", "specialty", "department",
+            "encounter_count", "claim_count", "total_charges", "total_payments",
+            "collection_rate", "denial_rate", "clean_claim_rate", "avg_payment_per_encounter",
+        ])
+    df["collection_rate"] = np.where(
+        df["total_charges"] > 0, df["total_payments"] / df["total_charges"] * 100, 0
+    )
+    df["denial_rate"] = np.where(
+        df["claim_count"] > 0, df["denied_claims"] / df["claim_count"] * 100, 0
+    )
+    df["clean_claim_rate"] = np.where(
+        df["claim_count"] > 0, df["clean_claims"] / df["claim_count"] * 100, 0
+    )
+    df["avg_payment_per_encounter"] = np.where(
+        df["encounter_count"] > 0, df["total_payments"] / df["encounter_count"], 0
+    )
+    return df
+
+
+# ===========================================================================
+# 19. CPT CODE ANALYSIS
+# ===========================================================================
+
+def query_cpt_analysis(p: FilterParams, db_path=None):
+    """Analyse revenue and denial patterns at the CPT procedure-code level.
+
+    Charges are directly at CPT granularity.  Denial rate is approximated as
+    the share of distinct claims (for encounters containing this CPT) that were
+    denied — standard practice when line-level remittance data is unavailable.
+
+    Returns:
+        DataFrame with columns [cpt_code, cpt_description, charge_count,
+        total_units, total_charges, avg_charge_per_unit, claim_count,
+        denied_claims, denial_rate], sorted by total_charges descending.
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+, encounter_ids AS (
+    SELECT DISTINCT encounter_id FROM filtered_claims
+), charge_stats AS (
+    SELECT ch.cpt_code,
+           ch.cpt_description,
+           COUNT(ch.charge_id)  AS charge_count,
+           SUM(ch.units)        AS total_units,
+           SUM(ch.charge_amount) AS total_charges
+    FROM silver_charges ch
+    WHERE ch.encounter_id IN (SELECT encounter_id FROM encounter_ids)
+    GROUP BY ch.cpt_code, ch.cpt_description
+), cpt_claim_pairs AS (
+    -- One row per (cpt_code, claim_id) — deduplicates multi-charge encounters
+    SELECT DISTINCT ch.cpt_code, fc.claim_id, fc.claim_status
+    FROM silver_charges ch
+    JOIN filtered_claims fc ON ch.encounter_id = fc.encounter_id
+), claim_stats AS (
+    SELECT cpt_code,
+           COUNT(DISTINCT claim_id)                                          AS claim_count,
+           SUM(CASE WHEN claim_status IN ('Denied','Appealed') THEN 1 ELSE 0 END) AS denied_claims
+    FROM cpt_claim_pairs
+    GROUP BY cpt_code
+)
+SELECT cs.cpt_code,
+       cs.cpt_description,
+       cs.charge_count,
+       cs.total_units,
+       cs.total_charges,
+       COALESCE(cls.claim_count,   0) AS claim_count,
+       COALESCE(cls.denied_claims, 0) AS denied_claims
+FROM charge_stats cs
+LEFT JOIN claim_stats cls ON cs.cpt_code = cls.cpt_code
+ORDER BY cs.total_charges DESC
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "cpt_code", "cpt_description", "charge_count", "total_units",
+            "total_charges", "avg_charge_per_unit", "claim_count", "denied_claims", "denial_rate",
+        ])
+    df["avg_charge_per_unit"] = np.where(
+        df["total_units"] > 0, df["total_charges"] / df["total_units"], 0
+    )
+    df["denial_rate"] = np.where(
+        df["claim_count"] > 0, df["denied_claims"] / df["claim_count"] * 100, 0
+    )
+    return df
+
+
+# ===========================================================================
+# 20. UNDERPAYMENT ANALYSIS
+# ===========================================================================
+
+def query_underpayment_analysis(p: FilterParams, db_path=None):
+    """Identify payer underpayments by comparing payment_amount to allowed_amount.
+
+    In healthcare billing the ERA (835) carries both the allowed amount
+    (what the contract permits) and the actual payment.  When
+    payment_amount < allowed_amount the difference is an underpayment —
+    money owed under contract that was not remitted.
+
+    Returns:
+        tuple: (summary_dataframe, total_recovery_opportunity)
+            summary_dataframe: DataFrame with columns [payer_id, payer_name,
+                payer_type, payment_count, total_allowed, total_paid,
+                total_underpaid, underpaid_count, underpayment_rate],
+                sorted by total_underpaid descending.
+            total_recovery_opportunity: scalar sum of all underpayments (float).
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT fc.payer_id,
+       py.payer_name,
+       py.payer_type,
+       COUNT(p.payment_id)                                            AS payment_count,
+       SUM(p.allowed_amount)                                          AS total_allowed,
+       SUM(p.payment_amount)                                          AS total_paid,
+       SUM(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount
+                ELSE 0 END)                                           AS total_underpaid,
+       COUNT(CASE WHEN p.allowed_amount > p.payment_amount
+                  THEN 1 END)                                         AS underpaid_count
+FROM filtered_claims fc
+JOIN silver_payers   py ON fc.payer_id  = py.payer_id
+JOIN silver_payments p  ON fc.claim_id  = p.claim_id
+WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
+GROUP BY fc.payer_id, py.payer_name, py.payer_type
+ORDER BY total_underpaid DESC
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    empty_cols = [
+        "payer_id", "payer_name", "payer_type", "payment_count",
+        "total_allowed", "total_paid", "total_underpaid", "underpaid_count", "underpayment_rate",
+    ]
+    if df.empty:
+        return pd.DataFrame(columns=empty_cols), 0.0
+    df["underpayment_rate"] = np.where(
+        df["total_allowed"] > 0, df["total_underpaid"] / df["total_allowed"] * 100, 0
+    )
+    total_recovery = float(df["total_underpaid"].sum())
+    return df, total_recovery
+
+
+def query_underpayment_trend(p: FilterParams, db_path=None):
+    """Monthly underpayment amounts for trend analysis.
+
+    Returns:
+        DataFrame indexed by year_month with columns
+        [total_allowed, total_paid, total_underpaid, underpayment_rate].
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT strftime('%Y-%m', p.payment_date)                              AS period,
+       SUM(p.allowed_amount)                                          AS total_allowed,
+       SUM(p.payment_amount)                                          AS total_paid,
+       SUM(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount
+                ELSE 0 END)                                           AS total_underpaid
+FROM filtered_claims fc
+JOIN silver_payments p ON fc.claim_id = p.claim_id
+WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
+GROUP BY strftime('%Y-%m', p.payment_date)
+ORDER BY period
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=["total_allowed", "total_paid", "total_underpaid", "underpayment_rate"])
+    df["underpayment_rate"] = np.where(
+        df["total_allowed"] > 0, df["total_underpaid"] / df["total_allowed"] * 100, 0
+    )
+    df = df.set_index("period")
+    df.index.name = "year_month"
+    return df
+
+
+# ===========================================================================
+# 21. CLEAN CLAIM SCRUBBING BREAKDOWN
+# ===========================================================================
+
+# Human-readable labels and resolution guidance for each fail reason code.
+_FAIL_REASON_LABELS = {
+    "MISSING_AUTH":        "Missing Prior Authorization",
+    "ELIGIBILITY_FAIL":    "Patient Eligibility Not Verified",
+    "CODING_ERROR":        "Invalid CPT/ICD-10 Combination",
+    "DUPLICATE_SUBMISSION":"Duplicate Claim Submission",
+    "TIMELY_FILING":       "Outside Timely Filing Window",
+    "MISSING_INFO":        "Missing Required Information",
+}
+_FAIL_REASON_GUIDANCE = {
+    "MISSING_AUTH":        "Automate auth check at scheduling; obtain PA before service date.",
+    "ELIGIBILITY_FAIL":    "Verify eligibility 24-48h before appointment via real-time check.",
+    "CODING_ERROR":        "Add CPT/ICD-10 edit rules to charge capture; schedule coder training.",
+    "DUPLICATE_SUBMISSION":"Enable duplicate detection in clearinghouse scrubber settings.",
+    "TIMELY_FILING":       "Set automated alerts when claims approach payer filing deadlines.",
+    "MISSING_INFO":        "Implement front-desk registration checklists with required-field validation.",
+}
+
+
+def query_clean_claim_breakdown(p: FilterParams, db_path=None):
+    """Break down dirty (failed scrubbing) claims by specific fail reason.
+
+    Returns:
+        DataFrame with columns [fail_reason, label, count, total_charges,
+        pct_of_dirty, guidance], sorted by count descending.
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT fail_reason,
+       COUNT(*)                    AS count,
+       SUM(total_charge_amount)    AS total_charges
+FROM filtered_claims
+WHERE is_clean_claim = 0
+  AND fail_reason IS NOT NULL
+GROUP BY fail_reason
+ORDER BY count DESC
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "fail_reason", "label", "count", "total_charges", "pct_of_dirty", "guidance",
+        ])
+    total_dirty = df["count"].sum()
+    df["pct_of_dirty"] = np.where(total_dirty > 0, df["count"] / total_dirty * 100, 0)
+    df["label"]    = df["fail_reason"].map(_FAIL_REASON_LABELS).fillna(df["fail_reason"])
+    df["guidance"] = df["fail_reason"].map(_FAIL_REASON_GUIDANCE).fillna("")
+    return df
+
+
+# ===========================================================================
+# 22. PATIENT FINANCIAL RESPONSIBILITY
+# ===========================================================================
+
+def query_patient_responsibility_by_payer(p: FilterParams, db_path=None):
+    """Patient financial responsibility (patient portion) grouped by payer.
+
+    Patient responsibility = max(allowed_amount - payment_amount, 0).
+    This represents the co-pay, deductible, and coinsurance owed by the
+    patient after insurance adjudicates the claim.
+
+    Returns:
+        DataFrame with columns [payer_name, payer_type, payment_count,
+        total_patient_resp, avg_patient_resp, pct_of_allowed],
+        sorted by total_patient_resp descending.
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT py.payer_name,
+       py.payer_type,
+       COUNT(p.payment_id)                                                    AS payment_count,
+       SUM(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS total_patient_resp,
+       AVG(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS avg_patient_resp,
+       SUM(p.allowed_amount)                                                   AS total_allowed
+FROM filtered_claims fc
+JOIN silver_payers   py ON fc.payer_id = py.payer_id
+JOIN silver_payments p  ON fc.claim_id = p.claim_id
+WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
+GROUP BY py.payer_name, py.payer_type
+ORDER BY total_patient_resp DESC
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "payer_name", "payer_type", "payment_count",
+            "total_patient_resp", "avg_patient_resp", "pct_of_allowed",
+        ])
+    df["pct_of_allowed"] = np.where(
+        df["total_allowed"] > 0, df["total_patient_resp"] / df["total_allowed"] * 100, 0
+    )
+    return df
+
+
+def query_patient_responsibility_by_dept(p: FilterParams, db_path=None):
+    """Patient financial responsibility grouped by department and encounter type.
+
+    Returns:
+        DataFrame with columns [department, encounter_type, claim_count,
+        total_patient_resp, avg_patient_resp], sorted by total_patient_resp desc.
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT e.department,
+       e.encounter_type,
+       COUNT(DISTINCT fc.claim_id)                                            AS claim_count,
+       SUM(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS total_patient_resp,
+       AVG(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS avg_patient_resp
+FROM filtered_claims fc
+JOIN silver_encounters e ON fc.encounter_id = e.encounter_id
+JOIN silver_payments   p ON fc.claim_id     = p.claim_id
+WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
+GROUP BY e.department, e.encounter_type
+ORDER BY total_patient_resp DESC
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "department", "encounter_type", "claim_count", "total_patient_resp", "avg_patient_resp",
+        ])
+    return df
+
+
+def query_patient_responsibility_trend(p: FilterParams, db_path=None):
+    """Monthly trend of patient financial responsibility.
+
+    Returns:
+        DataFrame indexed by year_month with columns
+        [total_patient_resp, total_allowed, patient_resp_rate].
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT strftime('%Y-%m', fc.date_of_service)                                  AS period,
+       SUM(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS total_patient_resp,
+       SUM(p.allowed_amount)                                                   AS total_allowed,
+       COUNT(DISTINCT fc.claim_id)                                             AS claim_count
+FROM filtered_claims fc
+JOIN silver_payments p ON fc.claim_id = p.claim_id
+WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
+GROUP BY strftime('%Y-%m', fc.date_of_service)
+ORDER BY period
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=["total_patient_resp", "total_allowed", "patient_resp_rate"])
+    df["patient_resp_rate"] = np.where(
+        df["total_allowed"] > 0, df["total_patient_resp"] / df["total_allowed"] * 100, 0
+    )
+    df = df.set_index("period")
+    df.index.name = "year_month"
+    return df
+
+
+# ===========================================================================
+# 23. DATA FRESHNESS
+# ===========================================================================
+
+# Expected refresh cadence per domain (hours) — used to compute staleness.
+_DOMAIN_CADENCE_HOURS = {
+    "claims":          4,
+    "payments":        6,
+    "encounters":      2,
+    "charges":         4,
+    "denials":        12,
+    "adjustments":     8,
+    "payers":         24,
+    "patients":       24,
+    "providers":      24,
+    "operating_costs": 720,  # monthly
+}
+
+_DOMAIN_LABELS = {
+    "claims":          "Claims",
+    "payments":        "Payments / ERA",
+    "encounters":      "Encounters / ADT",
+    "charges":         "Charges / CDM",
+    "denials":         "Denials",
+    "adjustments":     "Adjustments",
+    "payers":          "Payer Master",
+    "patients":        "Patient Demographics",
+    "providers":       "Provider Roster",
+    "operating_costs": "Operating Costs",
+}
+
+
+def query_data_freshness(db_path=None):
+    """Return pipeline run metadata for the data freshness sidebar panel.
+
+    Returns:
+        DataFrame with columns [domain, label, last_loaded_at, row_count,
+        source_file, cadence_hours, age_hours, status],
+        where status is 'fresh', 'stale', or 'critical'.
+    """
+    sql = "SELECT domain, last_loaded_at, row_count, source_file FROM pipeline_runs ORDER BY domain"
+    df = query_to_dataframe(sql, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "domain", "label", "last_loaded_at", "row_count",
+            "source_file", "cadence_hours", "age_hours", "status",
+        ])
+    now = pd.Timestamp.utcnow().replace(tzinfo=None)
+    df["label"]         = df["domain"].map(_DOMAIN_LABELS).fillna(df["domain"])
+    df["cadence_hours"] = df["domain"].map(_DOMAIN_CADENCE_HOURS).fillna(24)
+    df["last_loaded_at_dt"] = pd.to_datetime(df["last_loaded_at"], errors="coerce")
+    df["age_hours"] = (now - df["last_loaded_at_dt"]).dt.total_seconds() / 3600
+    df["status"] = "fresh"
+    df.loc[df["age_hours"] > df["cadence_hours"],       "status"] = "stale"
+    df.loc[df["age_hours"] > df["cadence_hours"] * 3,   "status"] = "critical"
+    return df[["domain", "label", "last_loaded_at", "row_count", "source_file",
+               "cadence_hours", "age_hours", "status"]]
