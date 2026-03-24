@@ -82,11 +82,12 @@ RCM_COLORS = [
 # Import our custom modules
 from src.data_loader import load_all_data       # Loads all tables from SQLite
 from src.validators import validate_all         # Data integrity checks
-from src.metadata_pages import (               # Four supplemental metadata pages
+from src.metadata_pages import (               # Five supplemental metadata pages
     render_data_lineage,
     render_data_catalog,
     render_knowledge_graph,
     render_semantic_layer,
+    render_ai_architecture,
 )
 from src.ai_chat import (                        # AI Assistant tab backend
     build_system_prompt,
@@ -484,6 +485,8 @@ if st.sidebar.button("Knowledge Graph", width="stretch"):
     st.session_state["active_page"] = "knowledge_graph"
 if st.sidebar.button("Semantic Layer", width="stretch"):
     st.session_state["active_page"] = "semantic_layer"
+if st.sidebar.button("AI Architecture", width="stretch"):
+    st.session_state["active_page"] = "ai_architecture"
 if st.session_state["active_page"] != "dashboard":
     if st.sidebar.button("Back to Dashboard", type="primary", width="stretch"):
         st.session_state["active_page"] = "dashboard"
@@ -501,6 +504,9 @@ elif _active == "knowledge_graph":
     st.stop()
 elif _active == "semantic_layer":
     render_semantic_layer()
+    st.stop()
+elif _active == "ai_architecture":
+    render_ai_architecture()
     st.stop()
 
 # ── Header ───────────────────────────────────────────────────────────
