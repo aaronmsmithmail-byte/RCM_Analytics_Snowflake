@@ -389,7 +389,7 @@ A GitHub Actions workflow (`.github/workflows/test.yml`) runs automatically on e
 pytest tests/ -v
 ```
 
-**150 tests total** — 110 metric tests (`test_metrics.py`) and 40 validator tests (`test_validators.py`). Both test suites use SQLite `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results.
+**160 tests total** — 110 metric tests (`test_metrics.py`), 40 validator tests (`test_validators.py`), and 10 AI config tests (`test_ai_chat_config.py`). The metric and validator suites use SQLite `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results. The AI config tests use `importlib.reload()` to verify env var parsing, bounds clamping, and non-numeric fallback behaviour for `AI_MAX_ROWS` and `AI_MAX_ITERATIONS`.
 
 ---
 
