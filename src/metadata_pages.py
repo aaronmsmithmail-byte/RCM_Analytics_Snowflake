@@ -313,29 +313,39 @@ _CSV_SOURCE_SYSTEMS = {
 _KG_NODES = [
     # Reference entities (blue) — outer ring top
     {"id": "payers",    "label": "payers",    "x": 5.0, "y": 9.0, "color": "#5b8dee", "size": 30,
-     "group": "Reference", "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL"},
+     "group": "Reference", "source_system": "Payer Master",
+     "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL"},
     {"id": "patients",  "label": "patients",  "x": 1.5, "y": 7.0, "color": "#5b8dee", "size": 30,
-     "group": "Reference", "hover": "silver_patients: patient_id PK, primary_payer_id FK → silver_payers"},
+     "group": "Reference", "source_system": "EHR",
+     "hover": "silver_patients: patient_id PK, primary_payer_id FK → silver_payers"},
     {"id": "providers", "label": "providers", "x": 8.5, "y": 7.0, "color": "#5b8dee", "size": 30,
-     "group": "Reference", "hover": "silver_providers: provider_id PK, department, specialty"},
+     "group": "Reference", "source_system": "EHR",
+     "hover": "silver_providers: provider_id PK, department, specialty"},
     # Central hub
     {"id": "encounters", "label": "encounters", "x": 5.0, "y": 5.5, "color": "#38c172", "size": 36,
-     "group": "Transactional", "hover": "silver_encounters: encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type"},
+     "group": "Transactional", "source_system": "EHR",
+     "hover": "silver_encounters: encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type"},
     # Claims hub
     {"id": "claims", "label": "claims", "x": 5.0, "y": 3.0, "color": "#38c172", "size": 36,
-     "group": "Transactional", "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount REAL, claim_status, is_clean_claim INTEGER"},
+     "group": "Transactional", "source_system": "Clearinghouse",
+     "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount REAL, claim_status, is_clean_claim INTEGER"},
     # Leaf transactional nodes
     {"id": "charges",     "label": "charges",     "x": 1.5, "y": 4.5, "color": "#38c172", "size": 26,
-     "group": "Transactional", "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date"},
+     "group": "Transactional", "source_system": "EHR / Charge Capture",
+     "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date"},
     {"id": "payments",    "label": "payments",    "x": 2.5, "y": 1.0, "color": "#38c172", "size": 26,
-     "group": "Transactional", "hover": "silver_payments: payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER"},
+     "group": "Transactional", "source_system": "Clearinghouse / ERA",
+     "hover": "silver_payments: payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER"},
     {"id": "denials",     "label": "denials",     "x": 5.0, "y": 0.5, "color": "#38c172", "size": 26,
-     "group": "Transactional", "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL"},
+     "group": "Transactional", "source_system": "Clearinghouse / ERA",
+     "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL"},
     {"id": "adjustments", "label": "adjustments", "x": 7.5, "y": 1.0, "color": "#38c172", "size": 26,
-     "group": "Transactional", "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL"},
+     "group": "Transactional", "source_system": "Billing System",
+     "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL"},
     # Operational
     {"id": "operating_costs", "label": "operating\ncosts", "x": 9.0, "y": 4.5, "color": "#e8a838", "size": 26,
-     "group": "Operational", "hover": "silver_operating_costs: period PK, total_rcm_cost REAL"},
+     "group": "Operational", "source_system": "ERP / Finance",
+     "hover": "silver_operating_costs: period PK, total_rcm_cost REAL"},
 ]
 
 _KG_EDGES = [
