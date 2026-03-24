@@ -2,26 +2,29 @@
 AI Chat Module for Healthcare RCM Analytics
 ============================================
 
-Provides the backend for the AI Assistant tab.  The system prompt is built
-dynamically from the four meta_* tables in SQLite so it stays automatically
-in sync with the data model without any manual maintenance.
+Provides the backend for the AI Assistant tab.
 
 Architecture:
-    1. build_system_prompt()  — queries meta_kpi_catalog, meta_semantic_layer,
-                                meta_kg_nodes, meta_kg_edges and formats them
-                                into a rich context string.  Optional live KPI
-                                values from the active dashboard filters are
-                                appended so the AI can answer "what is our
-                                current denial rate?" accurately.
-    2. stream_chat()          — calls the OpenRouter API (OpenAI-compatible)
-                                with streaming enabled; yields text chunks so
-                                the Streamlit UI can update incrementally.
+    1. build_system_prompt()  — queries the four meta_* tables (KPI catalog,
+                                semantic layer, KG nodes, KG edges) plus the
+                                live KPI snapshot from the active dashboard
+                                filters to produce the LLM system prompt.
+    2. execute_sql_tool()     — safely runs a SELECT/WITH query against the
+                                SQLite database and returns structured results.
+    3. run_agentic_turn()     — drives the tool-calling loop:
+                                  a. call OpenRouter with TOOL_SCHEMA
+                                  b. if the model calls run_sql, execute it
+                                     and feed results back
+                                  c. loop until the model returns a text reply
+                               Yields structured events so the Streamlit UI
+                               can show query expanders in real time.
 
-Configuration (via .env file):
+Configuration (.env file in project root):
     OPENROUTER_API_KEY  — required
     OPENROUTER_MODEL    — optional, defaults to openai/gpt-4o-mini
 """
 
+import json
 import os
 from typing import Iterator
 
@@ -30,29 +33,157 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass  # python-dotenv not installed; env vars must be set another way
+    pass
 
 
 # ---------------------------------------------------------------------------
-# Available models offered in the UI selectbox
+# Available models for the UI selectbox
 # ---------------------------------------------------------------------------
 AVAILABLE_MODELS = [
-    ("GPT-4o mini  (fast · cheap)",          "openai/gpt-4o-mini"),
-    ("GPT-4o  (most capable OpenAI)",         "openai/gpt-4o"),
-    ("Claude 3.5 Haiku  (fast · Anthropic)",  "anthropic/claude-3-5-haiku"),
-    ("Claude 3.5 Sonnet  (smart · Anthropic)","anthropic/claude-3-5-sonnet"),
-    ("Gemini Flash 1.5  (fast · Google)",     "google/gemini-flash-1.5"),
+    ("GPT-4o mini  (fast · cheap)",           "openai/gpt-4o-mini"),
+    ("GPT-4o  (most capable OpenAI)",          "openai/gpt-4o"),
+    ("Claude 3.5 Haiku  (fast · Anthropic)",   "anthropic/claude-3-5-haiku"),
+    ("Claude 3.5 Sonnet  (smart · Anthropic)", "anthropic/claude-3-5-sonnet"),
+    ("Gemini Flash 1.5  (fast · Google)",      "google/gemini-flash-1.5"),
 ]
 
 DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 
+# Maximum rows returned to the LLM per query (prevents context overflow).
+_MAX_ROWS = 100
+
+# Maximum tool-call iterations per turn (prevents runaway loops).
+_MAX_ITERATIONS = 8
+
 
 # ---------------------------------------------------------------------------
-# Internal: build context string from meta_* tables
+# Tool schema — passed to the OpenRouter API as the `tools` parameter
+# ---------------------------------------------------------------------------
+TOOL_SCHEMA = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_sql",
+            "description": (
+                "Execute a read-only SELECT query against the RCM SQLite database "
+                "and return the results as a table. "
+                "Use this to answer specific questions about the data, drill into "
+                "breakdowns by payer/department/provider, compute custom metrics, "
+                "or look up individual records. "
+                f"Results are capped at {_MAX_ROWS} rows — use GROUP BY aggregations "
+                "for large datasets."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "A valid SQLite SELECT statement. "
+                            "May use CTEs (WITH … AS). "
+                            "Only SELECT and WITH are permitted — no INSERT, UPDATE, "
+                            "DELETE, DROP, or other write operations."
+                        ),
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "One sentence describing what this query computes.",
+                    },
+                },
+                "required": ["query", "description"],
+            },
+        },
+    }
+]
+
+
+# ---------------------------------------------------------------------------
+# SQL execution
+# ---------------------------------------------------------------------------
+
+def execute_sql_tool(query: str, db_path=None) -> dict:
+    """
+    Safely execute a read-only SQL query and return structured results.
+
+    Only SELECT and WITH (CTE) queries are permitted.  Results are capped
+    at ``_MAX_ROWS`` rows to avoid flooding the LLM context window.
+
+    Returns a dict with one of two shapes:
+
+    Success::
+
+        {
+            "columns":   ["col1", "col2", ...],
+            "rows":      [[v, v, ...], ...],   # list of lists
+            "row_count": int,                  # rows returned (after cap)
+            "total_rows": int,                 # rows before cap
+            "truncated": bool,
+        }
+
+    Failure::
+
+        {"error": "message"}
+    """
+    # Safety check — only allow read queries
+    stripped = query.strip().lstrip("(")
+    if stripped[:6].upper() not in ("SELECT", "WITH  ", "WITH\n", "WITH\t"):
+        first_word = stripped.split()[0].upper() if stripped.split() else ""
+        if first_word not in ("SELECT", "WITH"):
+            return {"error": "Only SELECT and WITH (CTE) queries are permitted."}
+
+    from src.database import get_connection
+    import pandas as pd
+
+    conn = get_connection(db_path)
+    try:
+        df = pd.read_sql_query(query, conn)
+        total_rows = len(df)
+        truncated = total_rows > _MAX_ROWS
+        df = df.head(_MAX_ROWS)
+
+        # Convert NaN → None for clean JSON serialisation
+        rows = [
+            [None if (v != v) else v for v in row]   # NaN check: NaN != NaN
+            for row in df.values.tolist()
+        ]
+        return {
+            "columns":   list(df.columns),
+            "rows":      rows,
+            "row_count": len(rows),
+            "total_rows": total_rows,
+            "truncated": truncated,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+    finally:
+        conn.close()
+
+
+def _format_result_for_llm(result: dict) -> str:
+    """Format SQL results as compact CSV for the LLM tool-result message."""
+    if "error" in result:
+        return f"Query error: {result['error']}"
+    if result["row_count"] == 0:
+        return "Query returned 0 rows."
+
+    lines = [",".join(str(c) for c in result["columns"])]
+    for row in result["rows"]:
+        lines.append(",".join("NULL" if v is None else str(v) for v in row))
+
+    note = (
+        f"\n[Showing {result['row_count']} of {result['total_rows']} total rows. "
+        "Use GROUP BY / aggregations to summarise larger datasets.]"
+        if result["truncated"] else ""
+    )
+    return "\n".join(lines) + note
+
+
+# ---------------------------------------------------------------------------
+# Internal: meta-table context string
 # ---------------------------------------------------------------------------
 
 def _get_meta_context(db_path=None) -> str:
-    """Query all four meta_* tables and format them as a markdown context block."""
+    """Query all four meta_* tables and return a formatted markdown block."""
     from src.database import get_connection
     conn = get_connection(db_path)
 
@@ -80,31 +211,27 @@ def _get_meta_context(db_path=None) -> str:
 
     lines: list[str] = []
 
-    # ── Database tables ────────────────────────────────────────────────
-    lines.append("## Silver-Layer Tables (primary query targets)")
-    for entity_id, group, silver_table, desc in nodes:
+    lines.append("## Silver-Layer Tables  (queryable via run_sql)")
+    for _, group, silver_table, desc in nodes:
         lines.append(f"- **{silver_table}** ({group}): {desc}")
 
-    # ── Relationships ──────────────────────────────────────────────────
-    lines.append("\n## Table Relationships (foreign keys)")
+    lines.append("\n## Table Relationships  (foreign-key joins)")
     for parent, child, join_col, cardinality, meaning in edges:
         lines.append(
             f"- silver_{parent} → silver_{child} "
             f"ON {join_col} ({cardinality}): {meaning}"
         )
 
-    # ── KPI definitions ────────────────────────────────────────────────
     lines.append("\n## KPI Definitions")
     current_cat = None
     for metric, cat, defn, formula, benchmark in kpis:
         if cat != current_cat:
             lines.append(f"\n### {cat}")
             current_cat = cat
-        bench_str = f" | Benchmark: {benchmark}" if benchmark else ""
+        bench = f" | Benchmark: {benchmark}" if benchmark else ""
         lines.append(f"- **{metric}**: {defn}")
-        lines.append(f"  Formula: `{formula}`{bench_str}")
+        lines.append(f"  Formula: `{formula}`{bench}")
 
-    # ── Semantic mappings ──────────────────────────────────────────────
     lines.append("\n## Semantic Mappings  (business concept → KPI → source columns)")
     current_concept = None
     for concept, kpi, cols, formula, rule in semantic:
@@ -125,103 +252,108 @@ def _get_meta_context(db_path=None) -> str:
 
 def build_system_prompt(live_kpis: dict | None = None, db_path=None) -> str:
     """
-    Build the AI system prompt.
-
-    Combines a static role description with dynamically-generated content
-    from the meta_* tables so the AI always has an accurate picture of the
-    data model.
+    Build the AI system prompt from meta_* tables plus the live KPI snapshot.
 
     Args:
         live_kpis: Optional dict of current KPI values from the active
-                   dashboard filters, e.g.::
-
-                       {"Days in A/R": 32.5, "Denial Rate": 8.2, ...}
-
-        db_path:   Optional SQLite path override (defaults to DB_PATH).
+                   dashboard filters, e.g. ``{"Days in A/R": "32.5 days"}``.
+        db_path:   Optional SQLite path override.
 
     Returns:
-        System prompt string ready for the messages list.
+        System prompt string ready to be the first message in the list.
     """
     meta = _get_meta_context(db_path)
 
     kpi_snapshot = ""
     if live_kpis:
         kpi_lines = "\n".join(f"  - {k}: {v}" for k, v in live_kpis.items())
-        kpi_snapshot = (
-            "\n## Live KPI Snapshot  (from active sidebar filters)\n"
-            + kpi_lines
-        )
+        kpi_snapshot = "\n## Live KPI Snapshot  (from active sidebar filters)\n" + kpi_lines
 
     return f"""You are an AI analyst embedded in a Healthcare Revenue Cycle Management (RCM) \
-Analytics dashboard built on a SQLite Medallion-Architecture database \
+Analytics dashboard backed by a SQLite Medallion-Architecture database \
 (Bronze → Silver → Gold layers).
 
 Your role:
 - Answer natural-language questions about RCM performance.
-- Explain KPIs, formulas, and industry benchmarks in plain language.
-- Identify potential issues and suggest actions based on the numbers.
-- Describe what SQL would be needed to answer deeper questions.
+- Explain KPIs, formulas, and industry benchmarks clearly.
+- Use the run_sql tool to query the database whenever you need specific data \
+not already in the KPI snapshot — breakdowns by payer, department, provider, \
+time period, denial reason codes, etc.
+- Identify issues and suggest actionable next steps.
 
 {meta}
 {kpi_snapshot}
 
+## Tool usage guidelines
+- Prefer aggregation queries (GROUP BY, SUM, COUNT, AVG) over row-level queries.
+- Use the silver_* tables for most queries; gold_* views for pre-aggregated KPIs.
+- Always include LIMIT when fetching non-aggregated rows.
+- Chain multiple tool calls if you need data from several tables.
+- After receiving results, interpret them in plain language with context.
+
 ## Response guidelines
-- Be concise.  Healthcare finance professionals are busy.
+- Be concise — healthcare finance professionals are busy.
 - Always state the relevant benchmark when discussing a KPI value.
 - Format numbers as "$1.2M", "8.3%", "34 days", etc.
-- If asked about a value not in the snapshot, say you don't have that data \
-and explain which table/column to query.
-- Never fabricate specific dollar or percentage figures.
-- Industry benchmarks (unless overridden above):
+- Never fabricate specific figures — use run_sql to get real data.
+- Industry benchmarks (unless overridden in snapshot):
     DAR < 35 days | NCR > 95% | GCR > 70% | Clean Claim Rate > 90%
     Denial Rate < 10% | First-Pass Rate > 85% | Cost to Collect < 3%
 """
 
 
 # ---------------------------------------------------------------------------
-# Public: streaming chat
+# Public: agentic turn
 # ---------------------------------------------------------------------------
 
-def stream_chat(
+def run_agentic_turn(
     messages: list[dict],
     model: str | None = None,
-) -> Iterator[str]:
+) -> Iterator[dict]:
     """
-    Stream a chat response from OpenRouter.
+    Run one conversational turn with an agentic tool-calling loop.
 
-    OpenRouter exposes an OpenAI-compatible endpoint so we use the ``openai``
-    Python SDK with a custom ``base_url``.
+    ``messages`` is mutated in-place — assistant messages, tool-call
+    records, and tool-result messages are appended as the loop runs.
+    After the generator is exhausted, ``messages`` contains the full
+    updated history ready to be persisted for the next turn.
 
-    Args:
-        messages: Full conversation history as a list of
-                  ``{"role": "system"|"user"|"assistant", "content": "..."}``
-                  dicts.  The system message should be the first entry.
-        model:    OpenRouter model ID string.  Defaults to the
-                  ``OPENROUTER_MODEL`` env var or ``openai/gpt-4o-mini``.
+    Yields dicts with a ``"type"`` key:
 
-    Yields:
-        Text chunks from the streaming response.
+    ``tool_call``::
 
-    Raises:
-        ValueError:  If ``OPENROUTER_API_KEY`` is not configured.
-        ImportError: If the ``openai`` package is not installed.
+        {"type": "tool_call", "description": str, "sql": str}
+
+    ``tool_result``::
+
+        {"type": "tool_result", "description": str, "sql": str,
+         "columns": list, "rows": list, "row_count": int,
+         "total_rows": int, "truncated": bool, "error": str | None}
+
+    ``text``::
+
+        {"type": "text", "content": str}
+
+    ``error``::
+
+        {"type": "error", "message": str}
     """
     try:
         from openai import OpenAI
-    except ImportError as exc:
-        raise ImportError(
-            "The 'openai' package is required for the AI tab.  "
-            "Run: pip install openai"
-        ) from exc
+    except ImportError:
+        yield {"type": "error", "message": "openai package required: pip install openai"}
+        return
 
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key or api_key.strip() in ("", "your_api_key_here"):
-        raise ValueError(
-            "OPENROUTER_API_KEY is not configured.  "
-            "Add it to the .env file in the project root and restart the app."
-        )
-
-    selected_model = model or DEFAULT_MODEL
+        yield {
+            "type": "error",
+            "message": (
+                "OPENROUTER_API_KEY is not configured. "
+                "Add it to the .env file in the project root and restart the app."
+            ),
+        }
+        return
 
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -232,14 +364,72 @@ def stream_chat(
         },
     )
 
-    stream = client.chat.completions.create(
-        model=selected_model,
-        messages=messages,
-        stream=True,
-        max_tokens=1500,
-        temperature=0.3,
-    )
+    selected_model = model or DEFAULT_MODEL
 
-    for chunk in stream:
-        if chunk.choices and chunk.choices[0].delta.content:
-            yield chunk.choices[0].delta.content
+    for _iteration in range(_MAX_ITERATIONS):
+        response = client.chat.completions.create(
+            model=selected_model,
+            messages=messages,
+            tools=TOOL_SCHEMA,
+            tool_choice="auto",
+            max_tokens=1500,
+            temperature=0.3,
+        )
+
+        msg = response.choices[0].message
+        finish = response.choices[0].finish_reason
+
+        if finish == "tool_calls" or msg.tool_calls:
+            # Append assistant message (with tool_calls) to history
+            messages.append({
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id":   tc.id,
+                        "type": "function",
+                        "function": {
+                            "name":      tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ],
+            })
+
+            for tc in msg.tool_calls:
+                args = json.loads(tc.function.arguments)
+                sql  = args.get("query", "")
+                desc = args.get("description", "Running query…")
+
+                yield {"type": "tool_call", "description": desc, "sql": sql}
+
+                result = execute_sql_tool(sql)
+
+                yield {
+                    "type":        "tool_result",
+                    "description": desc,
+                    "sql":         sql,
+                    "columns":     result.get("columns", []),
+                    "rows":        result.get("rows", []),
+                    "row_count":   result.get("row_count", 0),
+                    "total_rows":  result.get("total_rows", 0),
+                    "truncated":   result.get("truncated", False),
+                    "error":       result.get("error"),
+                }
+
+                # Feed result back into conversation history
+                messages.append({
+                    "role":         "tool",
+                    "tool_call_id": tc.id,
+                    "content":      _format_result_for_llm(result),
+                })
+
+        else:
+            # Model returned a final text response — append and yield
+            content = msg.content or ""
+            messages.append({"role": "assistant", "content": content})
+            yield {"type": "text", "content": content}
+            return
+
+    yield {"type": "error", "message": f"Exceeded {_MAX_ITERATIONS} tool-call iterations."}

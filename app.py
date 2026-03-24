@@ -90,7 +90,7 @@ from src.metadata_pages import (               # Four supplemental metadata page
 )
 from src.ai_chat import (                        # AI Assistant tab backend
     build_system_prompt,
-    stream_chat,
+    run_agentic_turn,
     AVAILABLE_MODELS,
     DEFAULT_MODEL,
 )
@@ -2138,11 +2138,17 @@ with tab11:
 # =====================================================================
 # TAB 12: AI ASSISTANT
 # =====================================================================
-# A chat interface that lets users ask natural-language questions about
-# RCM performance.  The LLM (via OpenRouter) is given a rich system
-# prompt built from the meta_* tables (KPI definitions, entity
-# descriptions, relationships, semantic mappings) plus the current live
-# KPI values so it can answer questions like "what is our denial rate?".
+# Chat interface with tool-calling: the LLM can call run_sql() to
+# execute live SELECT queries against the SQLite database and weave
+# the results into its answer.
+#
+# Session state keys:
+#   ai_display_turns  — list of turns for rendering (user + assistant
+#                       text + query expanders).  Persists across reruns.
+#   ai_api_messages   — flat list of API-format messages (user, assistant,
+#                       tool, tool-result) excluding the system prompt.
+#                       Rebuilt into a full messages list on each turn by
+#                       prepending a fresh system message.
 #
 # Configuration:
 #   1. Add OPENROUTER_API_KEY=<key> to the .env file in the project root.
@@ -2153,15 +2159,15 @@ with tab12:
     st.header("AI Assistant")
     st.caption(
         "Ask natural-language questions about your RCM data.  "
-        "The AI has full context of KPI definitions, table schemas, and your "
-        "current live KPI values."
+        "The AI can query the database directly to answer questions about "
+        "specific payers, departments, denial codes, and more."
     )
 
     # ── API key guard ─────────────────────────────────────────────────
-    import os
+    import os as _os
     _api_key_set = bool(
-        os.environ.get("OPENROUTER_API_KEY", "").strip()
-        and os.environ.get("OPENROUTER_API_KEY", "").strip() != "your_api_key_here"
+        _os.environ.get("OPENROUTER_API_KEY", "").strip()
+        and _os.environ.get("OPENROUTER_API_KEY", "").strip() != "your_api_key_here"
     )
 
     if not _api_key_set:
@@ -2173,7 +2179,7 @@ with tab12:
             icon="🔑",
         )
 
-    # ── Model selector ────────────────────────────────────────────────
+    # ── Model selector + clear button ─────────────────────────────────
     _col_model, _col_clear = st.columns([3, 1])
     with _col_model:
         _model_labels = [label for label, _ in AVAILABLE_MODELS]
@@ -2191,56 +2197,91 @@ with tab12:
     with _col_clear:
         st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
         if st.button("Clear chat", key="ai_clear_chat"):
-            st.session_state["ai_chat_history"] = []
+            st.session_state["ai_display_turns"]  = []
+            st.session_state["ai_api_messages"]   = []
             st.rerun()
 
-    # ── Build live KPI context dict ───────────────────────────────────
+    # ── Live KPI snapshot (passed into system prompt) ─────────────────
     _live_kpis = {
-        "Days in A/R":         f"{dar_val} days",
-        "Net Collection Rate": f"{ncr_val}%",
-        "Gross Collection Rate": f"{gcr_val}%",
-        "Clean Claim Rate":    f"{ccr_val}%",
-        "Denial Rate":         f"{denial_val}%",
-        "First-Pass Rate":     f"{fpr_val}%",
-        "Payment Accuracy":    f"{accuracy_val}%",
-        "Bad Debt Rate":       f"{bad_debt_val}%",
-        "Cost to Collect":     f"{ctc_val}%",
-        "Active filter — date": f"{start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}",
-        "Active filter — payer": selected_payer,
-        "Active filter — department": selected_dept,
-        "Active filter — encounter type": selected_enc_type,
-        "Claims in view": f"{len(f_claims):,}",
-        "Encounters in view": f"{len(f_encounters):,}",
+        "Days in A/R":            f"{dar_val} days",
+        "Net Collection Rate":    f"{ncr_val}%",
+        "Gross Collection Rate":  f"{gcr_val}%",
+        "Clean Claim Rate":       f"{ccr_val}%",
+        "Denial Rate":            f"{denial_val}%",
+        "First-Pass Rate":        f"{fpr_val}%",
+        "Payment Accuracy":       f"{accuracy_val}%",
+        "Bad Debt Rate":          f"{bad_debt_val}%",
+        "Cost to Collect":        f"{ctc_val}%",
+        "Active filter — date":   f"{start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}",
+        "Active filter — payer":  selected_payer,
+        "Active filter — dept":   selected_dept,
+        "Active filter — enc type": selected_enc_type,
+        "Claims in view":         f"{len(f_claims):,}",
+        "Encounters in view":     f"{len(f_encounters):,}",
     }
 
-    # ── Initialise chat history ───────────────────────────────────────
-    if "ai_chat_history" not in st.session_state:
-        st.session_state["ai_chat_history"] = []
+    # ── Initialise session state ──────────────────────────────────────
+    if "ai_display_turns" not in st.session_state:
+        st.session_state["ai_display_turns"] = []
+    if "ai_api_messages" not in st.session_state:
+        st.session_state["ai_api_messages"] = []
+
+    # ── Helper: render a single assistant turn ────────────────────────
+    def _render_assistant_turn(turn: dict, expanded: bool = False):
+        """Render an assistant turn: query expanders + final text."""
+        for _q in turn.get("queries", []):
+            with st.expander(f"🔍 {_q['description']}", expanded=expanded):
+                st.code(_q["sql"], language="sql")
+                if _q.get("error"):
+                    st.error(f"Query error: {_q['error']}")
+                elif _q.get("columns"):
+                    _qdf = pd.DataFrame(_q["rows"], columns=_q["columns"])
+                    st.dataframe(_qdf, hide_index=True, use_container_width=True)
+                    if _q.get("truncated"):
+                        st.caption(
+                            f"Showing {_q['row_count']:,} of "
+                            f"{_q['total_rows']:,} rows"
+                        )
+                else:
+                    st.info("Query returned 0 rows.")
+        if turn.get("content"):
+            st.markdown(turn["content"])
 
     # ── Starter suggestions (shown when chat is empty) ────────────────
-    if not st.session_state["ai_chat_history"]:
+    if not st.session_state["ai_display_turns"]:
         st.markdown("**Suggested questions:**")
         _suggestions = [
-            "Why might our denial rate be high and what should we investigate?",
+            "Which payer has the highest denial rate? Show me the breakdown.",
+            "What are the top 5 denial reason codes by total denied amount?",
+            "Show me monthly denial rate trend for the past 12 months.",
+            "Which department generates the most revenue per encounter?",
             "Explain Days in A/R and what's driving our current value.",
-            "Which payer type typically has the worst collection rate and why?",
-            "What does the Net Collection Rate formula mean in plain language?",
-            "What SQL would I write to find claims denied by a specific payer?",
             "How does the medallion architecture work in this database?",
         ]
         _sug_cols = st.columns(3)
         for i, _sug in enumerate(_suggestions):
             with _sug_cols[i % 3]:
-                if st.button(_sug, key=f"ai_sug_{i}", disabled=not _api_key_set, use_container_width=True):
-                    st.session_state["ai_chat_history"].append(
+                if st.button(
+                    _sug, key=f"ai_sug_{i}",
+                    disabled=not _api_key_set,
+                    use_container_width=True,
+                ):
+                    st.session_state["ai_display_turns"].append(
+                        {"role": "user", "content": _sug}
+                    )
+                    st.session_state["ai_api_messages"].append(
                         {"role": "user", "content": _sug}
                     )
                     st.rerun()
 
-    # ── Render conversation history ───────────────────────────────────
-    for _msg in st.session_state["ai_chat_history"]:
-        with st.chat_message(_msg["role"]):
-            st.markdown(_msg["content"])
+    # ── Render existing conversation ──────────────────────────────────
+    for _turn in st.session_state["ai_display_turns"]:
+        if _turn["role"] == "user":
+            with st.chat_message("user"):
+                st.markdown(_turn["content"])
+        else:
+            with st.chat_message("assistant"):
+                _render_assistant_turn(_turn, expanded=False)
 
     # ── Chat input ────────────────────────────────────────────────────
     _user_input = st.chat_input(
@@ -2249,41 +2290,70 @@ with tab12:
     )
 
     if _user_input:
-        # Append user message and display it immediately
-        st.session_state["ai_chat_history"].append(
+        # Show user message immediately
+        st.session_state["ai_display_turns"].append(
             {"role": "user", "content": _user_input}
         )
         with st.chat_message("user"):
             st.markdown(_user_input)
 
-        # Build the messages list: system prompt + conversation history
+        # Build full API message list: fresh system prompt + history + new user msg
         _system_prompt = build_system_prompt(live_kpis=_live_kpis)
-        _messages = [{"role": "system", "content": _system_prompt}]
-        _messages += st.session_state["ai_chat_history"]
-
-        # Stream the assistant response
-        with st.chat_message("assistant"):
-            try:
-                _response_chunks: list[str] = []
-
-                def _token_generator():
-                    for _chunk in stream_chat(_messages, model=_selected_model):
-                        _response_chunks.append(_chunk)
-                        yield _chunk
-
-                st.write_stream(_token_generator())
-                _full_response = "".join(_response_chunks)
-
-            except ValueError as _e:
-                _full_response = f"⚠️ Configuration error: {_e}"
-                st.error(_full_response)
-            except Exception as _e:
-                _full_response = f"⚠️ Error calling OpenRouter: {_e}"
-                st.error(_full_response)
-
-        st.session_state["ai_chat_history"].append(
-            {"role": "assistant", "content": _full_response}
+        _api_msgs = (
+            [{"role": "system", "content": _system_prompt}]
+            + st.session_state["ai_api_messages"]
+            + [{"role": "user", "content": _user_input}]
         )
+
+        # Run the agentic loop — collect queries and final text
+        _queries_this_turn: list[dict] = []
+        _final_text = ""
+        _pending_desc = ""
+
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking…"):
+                try:
+                    for _event in run_agentic_turn(_api_msgs, model=_selected_model):
+                        if _event["type"] == "tool_call":
+                            _pending_desc = _event["description"]
+
+                        elif _event["type"] == "tool_result":
+                            _queries_this_turn.append({
+                                "description": _event["description"],
+                                "sql":         _event["sql"],
+                                "columns":     _event["columns"],
+                                "rows":        _event["rows"],
+                                "row_count":   _event["row_count"],
+                                "total_rows":  _event["total_rows"],
+                                "truncated":   _event["truncated"],
+                                "error":       _event.get("error"),
+                            })
+
+                        elif _event["type"] == "text":
+                            _final_text = _event["content"]
+
+                        elif _event["type"] == "error":
+                            _final_text = f"⚠️ {_event['message']}"
+
+                except Exception as _exc:
+                    _final_text = f"⚠️ Unexpected error: {_exc}"
+
+            # Render the new assistant turn (expanders expanded on first show)
+            _render_assistant_turn(
+                {"queries": _queries_this_turn, "content": _final_text},
+                expanded=True,
+            )
+
+        # Persist display turn
+        st.session_state["ai_display_turns"].append({
+            "role":    "assistant",
+            "content": _final_text,
+            "queries": _queries_this_turn,
+        })
+
+        # Persist API messages: _api_msgs was mutated in-place by run_agentic_turn
+        # Strip the system message (index 0) before saving — it's rebuilt fresh each turn
+        st.session_state["ai_api_messages"] = _api_msgs[1:]
 
 
 # ── Sidebar Footer ───────────────────────────────────────────────────
