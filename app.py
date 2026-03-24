@@ -88,6 +88,12 @@ from src.metadata_pages import (               # Four supplemental metadata page
     render_knowledge_graph,
     render_semantic_layer,
 )
+from src.ai_chat import (                        # AI Assistant tab backend
+    build_system_prompt,
+    stream_chat,
+    AVAILABLE_MODELS,
+    DEFAULT_MODEL,
+)
 from src.metrics import (                        # 17 SQL-based KPI query functions
     FilterParams,
     query_days_in_ar,
@@ -509,7 +515,7 @@ if f_claims.empty:
 style_metric_cards(background_color="#ffffff", border_left_color="#1E6FBF", border_color="#e2e8f0", box_shadow=True)
 
 # ── Tabs ─────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
     "Executive Summary",
     "Collections & Revenue",
     "Claims & Denials",
@@ -521,6 +527,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "Underpayment Analysis",
     "📈 Forecasting",
     "Patient Responsibility",
+    "🤖 AI Assistant",
 ])
 
 # =====================================================================
@@ -2126,6 +2133,157 @@ with tab11:
         ]
         st.dataframe(pr_table, hide_index=True, width="stretch")
         export_buttons("patient_responsibility", {"Patient Responsibility": pr_table})
+
+
+# =====================================================================
+# TAB 12: AI ASSISTANT
+# =====================================================================
+# A chat interface that lets users ask natural-language questions about
+# RCM performance.  The LLM (via OpenRouter) is given a rich system
+# prompt built from the meta_* tables (KPI definitions, entity
+# descriptions, relationships, semantic mappings) plus the current live
+# KPI values so it can answer questions like "what is our denial rate?".
+#
+# Configuration:
+#   1. Add OPENROUTER_API_KEY=<key> to the .env file in the project root.
+#   2. Optionally set OPENROUTER_MODEL to choose a different model.
+#   3. Restart the Streamlit app.
+# =====================================================================
+with tab12:
+    st.header("AI Assistant")
+    st.caption(
+        "Ask natural-language questions about your RCM data.  "
+        "The AI has full context of KPI definitions, table schemas, and your "
+        "current live KPI values."
+    )
+
+    # ── API key guard ─────────────────────────────────────────────────
+    import os
+    _api_key_set = bool(
+        os.environ.get("OPENROUTER_API_KEY", "").strip()
+        and os.environ.get("OPENROUTER_API_KEY", "").strip() != "your_api_key_here"
+    )
+
+    if not _api_key_set:
+        st.warning(
+            "**OpenRouter API key not configured.**  "
+            "Add `OPENROUTER_API_KEY=<your_key>` to the `.env` file in the "
+            "project root and restart the app.  "
+            "Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys).",
+            icon="🔑",
+        )
+
+    # ── Model selector ────────────────────────────────────────────────
+    _col_model, _col_clear = st.columns([3, 1])
+    with _col_model:
+        _model_labels = [label for label, _ in AVAILABLE_MODELS]
+        _model_ids    = [mid   for _, mid   in AVAILABLE_MODELS]
+        _default_idx  = _model_ids.index(DEFAULT_MODEL) if DEFAULT_MODEL in _model_ids else 0
+        _selected_label = st.selectbox(
+            "Model",
+            _model_labels,
+            index=_default_idx,
+            key="ai_model_select",
+            disabled=not _api_key_set,
+        )
+        _selected_model = _model_ids[_model_labels.index(_selected_label)]
+
+    with _col_clear:
+        st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+        if st.button("Clear chat", key="ai_clear_chat"):
+            st.session_state["ai_chat_history"] = []
+            st.rerun()
+
+    # ── Build live KPI context dict ───────────────────────────────────
+    _live_kpis = {
+        "Days in A/R":         f"{dar_val} days",
+        "Net Collection Rate": f"{ncr_val}%",
+        "Gross Collection Rate": f"{gcr_val}%",
+        "Clean Claim Rate":    f"{ccr_val}%",
+        "Denial Rate":         f"{denial_val}%",
+        "First-Pass Rate":     f"{fpr_val}%",
+        "Payment Accuracy":    f"{accuracy_val}%",
+        "Bad Debt Rate":       f"{bad_debt_val}%",
+        "Cost to Collect":     f"{ctc_val}%",
+        "Active filter — date": f"{start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}",
+        "Active filter — payer": selected_payer,
+        "Active filter — department": selected_dept,
+        "Active filter — encounter type": selected_enc_type,
+        "Claims in view": f"{len(f_claims):,}",
+        "Encounters in view": f"{len(f_encounters):,}",
+    }
+
+    # ── Initialise chat history ───────────────────────────────────────
+    if "ai_chat_history" not in st.session_state:
+        st.session_state["ai_chat_history"] = []
+
+    # ── Starter suggestions (shown when chat is empty) ────────────────
+    if not st.session_state["ai_chat_history"]:
+        st.markdown("**Suggested questions:**")
+        _suggestions = [
+            "Why might our denial rate be high and what should we investigate?",
+            "Explain Days in A/R and what's driving our current value.",
+            "Which payer type typically has the worst collection rate and why?",
+            "What does the Net Collection Rate formula mean in plain language?",
+            "What SQL would I write to find claims denied by a specific payer?",
+            "How does the medallion architecture work in this database?",
+        ]
+        _sug_cols = st.columns(3)
+        for i, _sug in enumerate(_suggestions):
+            with _sug_cols[i % 3]:
+                if st.button(_sug, key=f"ai_sug_{i}", disabled=not _api_key_set, use_container_width=True):
+                    st.session_state["ai_chat_history"].append(
+                        {"role": "user", "content": _sug}
+                    )
+                    st.rerun()
+
+    # ── Render conversation history ───────────────────────────────────
+    for _msg in st.session_state["ai_chat_history"]:
+        with st.chat_message(_msg["role"]):
+            st.markdown(_msg["content"])
+
+    # ── Chat input ────────────────────────────────────────────────────
+    _user_input = st.chat_input(
+        "Ask a question about your RCM data…",
+        disabled=not _api_key_set,
+    )
+
+    if _user_input:
+        # Append user message and display it immediately
+        st.session_state["ai_chat_history"].append(
+            {"role": "user", "content": _user_input}
+        )
+        with st.chat_message("user"):
+            st.markdown(_user_input)
+
+        # Build the messages list: system prompt + conversation history
+        _system_prompt = build_system_prompt(live_kpis=_live_kpis)
+        _messages = [{"role": "system", "content": _system_prompt}]
+        _messages += st.session_state["ai_chat_history"]
+
+        # Stream the assistant response
+        with st.chat_message("assistant"):
+            try:
+                _response_chunks: list[str] = []
+
+                def _token_generator():
+                    for _chunk in stream_chat(_messages, model=_selected_model):
+                        _response_chunks.append(_chunk)
+                        yield _chunk
+
+                st.write_stream(_token_generator())
+                _full_response = "".join(_response_chunks)
+
+            except ValueError as _e:
+                _full_response = f"⚠️ Configuration error: {_e}"
+                st.error(_full_response)
+            except Exception as _e:
+                _full_response = f"⚠️ Error calling OpenRouter: {_e}"
+                st.error(_full_response)
+
+        st.session_state["ai_chat_history"].append(
+            {"role": "assistant", "content": _full_response}
+        )
 
 
 # ── Sidebar Footer ───────────────────────────────────────────────────
