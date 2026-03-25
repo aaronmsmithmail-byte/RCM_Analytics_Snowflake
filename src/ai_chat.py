@@ -310,6 +310,18 @@ time period, denial reason codes, etc.
 {meta}
 {kpi_snapshot}
 
+## CRITICAL: Exact table names — do not guess or invent names
+The ONLY valid silver-layer tables are exactly:
+silver_payers, silver_patients, silver_providers, silver_encounters,
+silver_charges, silver_claims, silver_payments, silver_denials,
+silver_adjustments, silver_operating_costs
+Never use a table name not in this list. Key data locations:
+- Denial reason codes, denied amounts, appeal status → silver_denials (JOIN to silver_claims via claim_id)
+- Payment amounts, allowed amounts → silver_payments (JOIN to silver_claims via claim_id)
+- Charge/CPT codes → silver_charges (JOIN to silver_encounters via encounter_id)
+- Adjustments → silver_adjustments (JOIN to silver_claims via claim_id)
+- Payer names → silver_payers (JOIN via payer_id)
+
 ## Tool usage guidelines
 - Prefer aggregation queries (GROUP BY, SUM, COUNT, AVG) over row-level queries.
 - Use the silver_* tables for most queries; gold_* views for pre-aggregated KPIs.
