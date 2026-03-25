@@ -41,13 +41,15 @@ except ImportError:
 # ---------------------------------------------------------------------------
 AVAILABLE_MODELS = [
     ("GPT-4o mini  (fast · cheap)",           "openai/gpt-4o-mini"),
-    ("GPT-4o  (most capable OpenAI)",          "openai/gpt-4o"),
-    ("Claude 3.5 Haiku  (fast · Anthropic)",   "anthropic/claude-3-5-haiku"),
-    ("Claude 3.5 Sonnet  (smart · Anthropic)", "anthropic/claude-3-5-sonnet"),
-    ("Gemini Flash 1.5  (fast · Google)",      "google/gemini-flash-1.5"),
+    ("GPT-4o  (capable · OpenAI)",            "openai/gpt-4o"),
+    ("o3 mini  (reasoning · OpenAI)",         "openai/o3-mini"),
+    ("Claude Haiku 4.5  (fast · Anthropic)",  "anthropic/claude-haiku-4-5"),
+    ("Claude Sonnet 4.5  (smart · Anthropic)","anthropic/claude-sonnet-4-5"),
+    ("Gemini Flash 2.0  (fast · Google)",     "google/gemini-2.0-flash-001"),
+    ("Gemini Pro 2.5  (capable · Google)",    "google/gemini-2.5-pro-preview-03-25"),
 ]
 
-DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-haiku-4-5")
 
 # Maximum rows returned to the LLM per query (prevents context overflow).
 # Override via AI_MAX_ROWS in .env — see .env.example.
