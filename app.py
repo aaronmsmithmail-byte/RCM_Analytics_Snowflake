@@ -2321,12 +2321,7 @@ with tab12:
                     disabled=not _api_key_set,
                     use_container_width=True,
                 ):
-                    st.session_state["ai_display_turns"].append(
-                        {"role": "user", "content": _sug}
-                    )
-                    st.session_state["ai_api_messages"].append(
-                        {"role": "user", "content": _sug}
-                    )
+                    st.session_state["ai_pending_input"] = _sug
                     st.rerun()
 
     # ── Render existing conversation ──────────────────────────────────
@@ -2342,7 +2337,7 @@ with tab12:
     _user_input = st.chat_input(
         "Ask a question about your RCM data…",
         disabled=not _api_key_set,
-    )
+    ) or st.session_state.pop("ai_pending_input", None)
 
     if _user_input:
         # Show user message immediately
