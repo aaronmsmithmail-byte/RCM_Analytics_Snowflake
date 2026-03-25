@@ -189,23 +189,21 @@ def _format_result_for_llm(result: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _get_meta_context(db_path=None) -> str:
-    """Query all four meta_* tables and return a formatted markdown block."""
+    """
+    Build the data model context block from the four meta_* tables.
+
+    Sections (all derived from the DB — nothing hardcoded here):
+      1. Valid table names  — from meta_kg_nodes
+      2. Table schemas      — PRAGMA table_info per silver table
+      3. Join paths         — from meta_kg_edges
+      4. Semantic mappings  — from meta_semantic_layer (business concept → columns)
+      5. KPI definitions    — from meta_kpi_catalog
+    """
     from src.database import get_connection
     conn = get_connection(db_path)
 
-    kpis = conn.execute(
-        "SELECT metric_name, category, definition, formula, benchmark "
-        "FROM meta_kpi_catalog ORDER BY category, metric_name"
-    ).fetchall()
-
-    semantic = conn.execute(
-        "SELECT business_concept, kpi_name, silver_columns, formula, business_rule "
-        "FROM meta_semantic_layer ORDER BY business_concept"
-    ).fetchall()
-
     nodes = conn.execute(
-        "SELECT entity_id, entity_group, silver_table, description, "
-        "COALESCE(source_system, '') AS source_system "
+        "SELECT entity_id, entity_group, silver_table, description "
         "FROM meta_kg_nodes ORDER BY entity_group, entity_id"
     ).fetchall()
 
@@ -214,40 +212,67 @@ def _get_meta_context(db_path=None) -> str:
         "FROM meta_kg_edges"
     ).fetchall()
 
-    conn.close()
+    semantic = conn.execute(
+        "SELECT business_concept, kpi_name, silver_columns, formula, business_rule "
+        "FROM meta_semantic_layer ORDER BY business_concept"
+    ).fetchall()
 
-    lines: list[str] = []
+    kpis = conn.execute(
+        "SELECT metric_name, category, definition, formula, benchmark "
+        "FROM meta_kpi_catalog ORDER BY category, metric_name"
+    ).fetchall()
 
-    # Fetch column schemas for all silver tables
+    # Fetch column schemas while connection is still open
     table_columns: dict[str, list[str]] = {}
-    for _, _, silver_table, _, _ in nodes:
+    for _, _, silver_table, _ in nodes:
         if silver_table:
             try:
                 cols = conn.execute(
                     f"PRAGMA table_info({silver_table})"
                 ).fetchall()
-                table_columns[silver_table] = [
-                    f"{c[1]} ({c[2]})" for c in cols
-                ]
+                table_columns[silver_table] = [f"{c[1]} ({c[2]})" for c in cols]
             except Exception:
                 pass
 
-    lines.append("## Silver-Layer Tables  (queryable via run_sql)")
-    for _, group, silver_table, desc, source_sys in nodes:
-        src = f" | Source: {source_sys}" if source_sys else ""
-        lines.append(f"- **{silver_table}** ({group}{src}): {desc}")
-        if silver_table in table_columns:
-            lines.append(
-                f"  Columns: {', '.join(table_columns[silver_table])}"
-            )
+    conn.close()
 
-    lines.append("\n## Table Relationships  (foreign-key joins)")
+    lines: list[str] = []
+
+    # ── 1. Valid table names (derived from meta_kg_nodes) ─────────────
+    valid_tables = [row[2] for row in nodes if row[2]]
+    lines.append("## Valid Table Names")
+    lines.append(
+        "ONLY query tables from this list — never invent or guess a table name:\n"
+        + ", ".join(valid_tables)
+    )
+
+    # ── 2. Table schemas (columns from PRAGMA, descriptions from meta_kg_nodes) ──
+    lines.append("\n## Table Schemas  (exact column names and types)")
+    for _, group, silver_table, desc in nodes:
+        if not silver_table:
+            continue
+        lines.append(f"\n**{silver_table}** ({group}): {desc}")
+        if silver_table in table_columns:
+            lines.append(f"  Columns: {', '.join(table_columns[silver_table])}")
+
+    # ── 3. Join paths (derived from meta_kg_edges) ────────────────────
+    lines.append("\n## Join Paths  (how to connect tables)")
     for parent, child, join_col, cardinality, meaning in edges:
         lines.append(
-            f"- silver_{parent} → silver_{child} "
-            f"ON {join_col} ({cardinality}): {meaning}"
+            f"- silver_{parent} JOIN silver_{child} ON {join_col} "
+            f"({cardinality}): {meaning}"
         )
 
+    # ── 4. Semantic mappings (derived from meta_semantic_layer) ───────
+    lines.append("\n## Semantic Mappings  (business concept → KPI → source columns)")
+    current_concept = None
+    for concept, kpi, cols, formula, rule in semantic:
+        if concept != current_concept:
+            lines.append(f"\n### {concept}")
+            current_concept = concept
+        lines.append(f"- **{kpi}**: columns `{cols}` | formula `{formula}` | {rule}")
+
+    # ── 5. KPI definitions (derived from meta_kpi_catalog) ────────────
     lines.append("\n## KPI Definitions")
     current_cat = None
     for metric, cat, defn, formula, benchmark in kpis:
@@ -255,19 +280,7 @@ def _get_meta_context(db_path=None) -> str:
             lines.append(f"\n### {cat}")
             current_cat = cat
         bench = f" | Benchmark: {benchmark}" if benchmark else ""
-        lines.append(f"- **{metric}**: {defn}")
-        lines.append(f"  Formula: `{formula}`{bench}")
-
-    lines.append("\n## Semantic Mappings  (business concept → KPI → source columns)")
-    current_concept = None
-    for concept, kpi, cols, formula, rule in semantic:
-        if concept != current_concept:
-            lines.append(f"\n### {concept}")
-            current_concept = concept
-        lines.append(f"- **{kpi}**")
-        lines.append(f"  Columns: `{cols}`")
-        lines.append(f"  Formula: `{formula}`")
-        lines.append(f"  Business rule: {rule}")
+        lines.append(f"- **{metric}**: {defn} | Formula: `{formula}`{bench}")
 
     return "\n".join(lines)
 
@@ -309,18 +322,6 @@ time period, denial reason codes, etc.
 
 {meta}
 {kpi_snapshot}
-
-## CRITICAL: Exact table names — do not guess or invent names
-The ONLY valid silver-layer tables are exactly:
-silver_payers, silver_patients, silver_providers, silver_encounters,
-silver_charges, silver_claims, silver_payments, silver_denials,
-silver_adjustments, silver_operating_costs
-Never use a table name not in this list. Key data locations:
-- Denial reason codes, denied amounts, appeal status → silver_denials (JOIN to silver_claims via claim_id)
-- Payment amounts, allowed amounts → silver_payments (JOIN to silver_claims via claim_id)
-- Charge/CPT codes → silver_charges (JOIN to silver_encounters via encounter_id)
-- Adjustments → silver_adjustments (JOIN to silver_claims via claim_id)
-- Payer names → silver_payers (JOIN via payer_id)
 
 ## Tool usage guidelines
 - Prefer aggregation queries (GROUP BY, SUM, COUNT, AVG) over row-level queries.
