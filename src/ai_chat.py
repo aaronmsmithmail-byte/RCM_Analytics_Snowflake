@@ -45,7 +45,7 @@ AVAILABLE_MODELS = [
     ("Kimi K2.5  (Moonshot)",                 "moonshotai/kimi-k2.5"),
 ]
 
-DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")
+DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "moonshotai/kimi-k2.5")
 
 # Maximum rows returned to the LLM per query (prevents context overflow).
 # Override via AI_MAX_ROWS in .env — see .env.example.
