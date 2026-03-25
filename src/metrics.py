@@ -1204,7 +1204,7 @@ ORDER BY period
 _DOMAIN_CADENCE_HOURS = {
     "claims":          4,
     "payments":        6,
-    "encounters":      2,
+    "encounters":      4,
     "charges":         4,
     "denials":        12,
     "adjustments":     8,

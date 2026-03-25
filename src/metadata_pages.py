@@ -111,8 +111,8 @@ def _draw_network_graph(nodes, edges, title, height=600):
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=20, r=20, t=50, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=20, r=20, t=50, b=60),
+        legend=dict(orientation="h", yanchor="top", y=-0.02, xanchor="left", x=0),
     )
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -651,8 +651,8 @@ def render_data_lineage():
                    range=[-1.3, Y_TOP + 0.8]),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=20, r=20, t=55, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=20, r=20, t=55, b=60),
+        legend=dict(orientation="h", yanchor="top", y=-0.02, xanchor="left", x=0),
     )
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
