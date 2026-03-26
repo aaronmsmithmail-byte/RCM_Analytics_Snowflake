@@ -666,11 +666,15 @@ def get_connection(db_path=None, read_only=False):
         read_only: If True, open the database in read-only mode.
                    Use this to avoid lock conflicts when another
                    process (e.g. Cube) holds a write lock.
+                   Falls back to read-write if the file does not exist.
 
     Returns:
         duckdb.DuckDBPyConnection.
     """
     path = db_path or DB_PATH
+    # Can't open a non-existent file in read-only mode
+    if read_only and not os.path.exists(path):
+        read_only = False
     conn = duckdb.connect(path, read_only=read_only)
     return conn
 
