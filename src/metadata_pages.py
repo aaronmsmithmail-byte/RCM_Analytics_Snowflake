@@ -596,34 +596,56 @@ def render_data_lineage():
 # ── Page 3: Knowledge Graph ───────────────────────────────────────────
 
 def render_knowledge_graph():
-    """Interactive entity-relationship diagram — edges and descriptions sourced live from meta_kg_nodes/edges."""
+    """Interactive entity-relationship diagram — sourced from Neo4j, falls back to DuckDB."""
     st.title("Knowledge Graph")
-    st.caption("Entity relationships across the 10 data tables.")
+    st.caption("Entity relationships across the 10 data tables. Powered by Neo4j (with DuckDB fallback).")
 
-    # ── Enrich node descriptions from meta_kg_nodes ──────────────────
-    nodes_meta = _query_meta(
-        "SELECT entity_id, silver_table, description FROM meta_kg_nodes"
-    )
-    desc_map = (
-        {row.entity_id: row.description for _, row in nodes_meta.iterrows()}
-        if not nodes_meta.empty else {}
-    )
+    # ── Try Neo4j first, fall back to DuckDB ─────────────────────────
+    neo4j_nodes = None
+    neo4j_edges = None
+    try:
+        from src.neo4j_client import get_kg_nodes, get_kg_edges, is_neo4j_available
+        neo4j_nodes = get_kg_nodes()
+        neo4j_edges = get_kg_edges()
+        _using_neo4j = neo4j_nodes is not None
+    except Exception:
+        _using_neo4j = False
 
-    # ── Build graph edges from meta_kg_edges ──────────────────────────
-    edges_meta = _query_meta(
-        "SELECT parent_entity, child_entity, join_column, cardinality FROM meta_kg_edges"
-    )
-    if not edges_meta.empty:
+    if neo4j_nodes:
+        desc_map = {n["entity_id"]: n["description"] for n in neo4j_nodes}
+    else:
+        nodes_meta = _query_meta(
+            "SELECT entity_id, silver_table, description FROM meta_kg_nodes"
+        )
+        desc_map = (
+            {row.entity_id: row.description for _, row in nodes_meta.iterrows()}
+            if not nodes_meta.empty else {}
+        )
+
+    if neo4j_edges:
         live_edges = [
-            {"source": row.parent_entity, "target": row.child_entity,
-             "label": f"{row.cardinality}\\n({row.join_column})"}
-            for _, row in edges_meta.iterrows()
+            {"source": e["parent_entity"], "target": e["child_entity"],
+             "label": f"{e['cardinality']}\\n({e['join_column']})"}
+            for e in neo4j_edges
         ]
     else:
-        live_edges = [
-            {**e, "label": e.get("label", "").replace(" (", "\\n(")}
-            for e in _KG_EDGES
-        ]
+        edges_meta = _query_meta(
+            "SELECT parent_entity, child_entity, join_column, cardinality FROM meta_kg_edges"
+        )
+        if not edges_meta.empty:
+            live_edges = [
+                {"source": row.parent_entity, "target": row.child_entity,
+                 "label": f"{row.cardinality}\\n({row.join_column})"}
+                for _, row in edges_meta.iterrows()
+            ]
+        else:
+            live_edges = [
+                {**e, "label": e.get("label", "").replace(" (", "\\n(")}
+                for e in _KG_EDGES
+            ]
+
+    if _using_neo4j:
+        st.success("Connected to Neo4j", icon="\u2713")
 
     st.subheader("Entity Relationship Diagram")
 
@@ -678,34 +700,51 @@ def render_knowledge_graph():
 | Orange | Operational | operating_costs |
 """)
 
-    # ── Relationships table — query meta_kg_edges live ─────────────────
+    # ── Relationships table ─────────────────────────────────────────────
     st.subheader("Relationships")
-    rel_df = _query_meta("""
-        SELECT parent_entity   AS "Parent Table",
-               child_entity    AS "Child Table",
-               join_column     AS "Join Column",
-               cardinality     AS "Cardinality",
-               business_meaning AS "Business Meaning"
-        FROM   meta_kg_edges
-        ORDER  BY parent_entity, child_entity
-    """)
-    if rel_df.empty:
-        # Fallback
+    if neo4j_edges:
         rel_df = pd.DataFrame([
-            {"Parent Table": r["parent_table"], "Child Table": r["child_table"],
-             "Join Column": r["join_column"], "Cardinality": r["cardinality"],
-             "Business Meaning": r["business_meaning"]}
-            for r in _KG_RELATIONSHIPS
+            {"Parent Table": e["parent_entity"], "Child Table": e["child_entity"],
+             "Join Column": e["join_column"], "Cardinality": e["cardinality"],
+             "Business Meaning": e["business_meaning"]}
+            for e in neo4j_edges
         ])
+    else:
+        rel_df = _query_meta("""
+            SELECT parent_entity   AS "Parent Table",
+                   child_entity    AS "Child Table",
+                   join_column     AS "Join Column",
+                   cardinality     AS "Cardinality",
+                   business_meaning AS "Business Meaning"
+            FROM   meta_kg_edges
+            ORDER  BY parent_entity, child_entity
+        """)
+        if rel_df.empty:
+            rel_df = pd.DataFrame([
+                {"Parent Table": r["parent_table"], "Child Table": r["child_table"],
+                 "Join Column": r["join_column"], "Cardinality": r["cardinality"],
+                 "Business Meaning": r["business_meaning"]}
+                for r in _KG_RELATIONSHIPS
+            ])
     st.dataframe(rel_df, use_container_width=True, hide_index=True)
 
 
 # ── Page 4: Semantic Layer ────────────────────────────────────────────
 
 def render_semantic_layer():
-    """Business concept → KPI → raw column mapping."""
+    """Business concept → KPI → raw column mapping. Powered by Cube with DuckDB fallback."""
     st.title("Semantic Layer")
-    st.caption("How business questions map to KPIs and raw data columns.")
+    st.caption("How business questions map to KPIs and raw data columns. Powered by Cube (with DuckDB fallback).")
+
+    # ── Check Cube connectivity ──────────────────────────────────────
+    _using_cube = False
+    try:
+        from src.cube_client import is_cube_available, get_semantic_mappings
+        _using_cube = is_cube_available()
+    except Exception:
+        pass
+    if _using_cube:
+        st.success("Connected to Cube semantic layer", icon="\u2713")
 
     # ── Business Concept → KPI graph ──
     st.subheader("Business Concept Map")
@@ -757,19 +796,32 @@ def render_semantic_layer():
 
     st.divider()
 
-    # ── Semantic mapping table — query meta_semantic_layer live ────────
+    # ── Semantic mapping table — try Cube, fall back to DuckDB ─────────
     st.subheader("Semantic Mapping")
-    sem_df = _query_meta("""
-        SELECT business_concept AS "Business Concept",
-               kpi_name         AS "KPI",
-               silver_columns   AS "Silver Columns",
-               formula          AS "Transformation",
-               business_rule    AS "Business Rule"
-        FROM   meta_semantic_layer
-        ORDER  BY business_concept, kpi_name
-    """)
+    sem_df = pd.DataFrame()
+    if _using_cube:
+        try:
+            mappings = get_semantic_mappings()
+            if mappings:
+                sem_df = pd.DataFrame([
+                    {"Business Concept": m["business_concept"], "KPI": m["kpi_name"],
+                     "Silver Columns": m["silver_columns"], "Transformation": m["formula"],
+                     "Business Rule": m["business_rule"]}
+                    for m in mappings
+                ])
+        except Exception:
+            pass
     if sem_df.empty:
-        # Fallback to static list
+        sem_df = _query_meta("""
+            SELECT business_concept AS "Business Concept",
+                   kpi_name         AS "KPI",
+                   silver_columns   AS "Silver Columns",
+                   formula          AS "Transformation",
+                   business_rule    AS "Business Rule"
+            FROM   meta_semantic_layer
+            ORDER  BY business_concept, kpi_name
+        """)
+    if sem_df.empty:
         sem_df = pd.DataFrame([
             {"Business Concept": r["business_concept"], "KPI": r["kpi_name"],
              "Silver Columns": r["silver_columns"], "Transformation": r["formula"],
@@ -853,11 +905,11 @@ Every AI response follows a **three-stage pipeline**:
         c.attr(label="CONTEXT ASSEMBLY", style="rounded,filled",
                color="#5b8dee", fontcolor="#1a3a8a", fontsize="12",
                bgcolor="#eff6ff", penwidth="2")
+        c.node("cube_api", "Cube Semantic Layer\n(measures, dimensions, joins)",
+               shape="box3d", fillcolor="#fef3c7", color="#e8a838")
+        c.node("neo4j_db", "Neo4j Knowledge Graph\n(10 entities, 9 FKs)",
+               shape="cylinder", fillcolor="#dcfce7", color="#38c172")
         c.node("meta_kpi", "meta_kpi_catalog\n(23 KPI definitions)",
-               shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
-        c.node("meta_sem", "meta_semantic_layer\n(concept → KPI maps)",
-               shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
-        c.node("meta_kg", "meta_kg_nodes + edges\n(10 entities, 9 FKs)",
                shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
         c.node("live_kpis", "Live KPI Snapshot\n(current filter values)",
                shape="box", fillcolor="#fef3c7", color="#e8a838")
@@ -894,9 +946,10 @@ Every AI response follows a **three-stage pipeline**:
                shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
 
     # ── Edges: Context assembly ──────────────────────────────────────
+    # ── Edges: Context assembly ──────────────────────────────────────
+    dot.edge("cube_api", "sys_prompt", label="semantic mappings", color="#e8a838")
+    dot.edge("neo4j_db", "sys_prompt", label="schema + join paths", color="#38c172")
     dot.edge("meta_kpi", "sys_prompt", label="KPI defs", color="#9561e2")
-    dot.edge("meta_sem", "sys_prompt", label="mappings", color="#9561e2")
-    dot.edge("meta_kg", "sys_prompt", label="schema", color="#9561e2")
     dot.edge("live_kpis", "sys_prompt", label="snapshot", color="#e8a838")
 
     # ── Edges: LLM flow ──────────────────────────────────────────────
@@ -912,7 +965,7 @@ Every AI response follows a **three-stage pipeline**:
     # ── Edges: Database access ───────────────────────────────────────
     dot.edge("run_sql", "silver_db", label="SELECT", color="#7a7a7a")
     dot.edge("run_sql", "gold_db", label="SELECT", color="#B8860B")
-    dot.edge("meta_db", "sys_prompt", label="build_system_prompt()",
+    dot.edge("meta_db", "sys_prompt", label="DuckDB fallback",
              color="#9561e2", style="dashed")
 
     st.graphviz_chart(dot, use_container_width=True)
@@ -925,14 +978,13 @@ Every AI response follows a **three-stage pipeline**:
     with col1:
         st.markdown("#### Stage 1 — Context Assembly")
         st.markdown("""
-`build_system_prompt()` in `src/ai_chat.py` queries four meta tables on every turn:
+`build_system_prompt()` in `src/ai_chat.py` assembles context on every turn from three sources:
 
-| Table | Content passed to LLM |
-|-------|-----------------------|
-| `meta_kpi_catalog` | 23 KPI names, formulas, categories, benchmarks |
-| `meta_semantic_layer` | Business concept → KPI → source column mappings |
-| `meta_kg_nodes` | 10 Silver-layer entity descriptions |
-| `meta_kg_edges` | 9 foreign-key relationships (join paths) |
+| Source | Content passed to LLM | Fallback |
+|--------|----------------------|----------|
+| **Cube** semantic layer | Measures, dimensions, joins, business rules | DuckDB `meta_semantic_layer` |
+| **Neo4j** knowledge graph | 10 entities, 9 FK relationships, schema descriptions | DuckDB `meta_kg_nodes` / `meta_kg_edges` |
+| DuckDB `meta_kpi_catalog` | 23 KPI names, formulas, categories, benchmarks | Static Python fallback |
 
 The **live KPI snapshot** appends current metric values and active sidebar
 filter state so the model can answer "what is our denial rate right now?" without

@@ -189,51 +189,94 @@ def _format_result_for_llm(result: dict) -> str:
 
 def _get_meta_context(db_path=None) -> str:
     """
-    Build the data model context block from the four meta_* tables.
+    Build the data model context block for the AI system prompt.
 
-    Sections (all derived from the DB — nothing hardcoded here):
-      1. Valid table names  — from meta_kg_nodes
+    Data sources (with graceful fallback):
+      - Knowledge graph: Neo4j → DuckDB meta_kg_* → schema introspection
+      - Semantic layer:  Cube /meta API → DuckDB meta_semantic_layer
+      - KPI definitions: DuckDB meta_kpi_catalog (always)
+
+    Sections:
+      1. Valid table names  — from Neo4j entities or meta_kg_nodes
       2. Table schemas      — DESCRIBE per silver table
-      3. Join paths         — from meta_kg_edges
-      4. Semantic mappings  — from meta_semantic_layer (business concept → columns)
+      3. Join paths         — from Neo4j relationships or meta_kg_edges
+      4. Semantic mappings  — from Cube metadata or meta_semantic_layer
       5. KPI definitions    — from meta_kpi_catalog
     """
     from src.database import get_connection
+
+    # ── Knowledge Graph: try Neo4j first, fall back to DuckDB ────────
+    try:
+        from src.neo4j_client import get_kg_nodes, get_kg_edges
+        neo4j_nodes = get_kg_nodes()
+        neo4j_edges = get_kg_edges()
+    except Exception:
+        neo4j_nodes = None
+        neo4j_edges = None
+
     conn = get_connection(db_path)
 
-    try:
-        nodes = conn.execute(
-            "SELECT entity_id, entity_group, silver_table, description "
-            "FROM meta_kg_nodes ORDER BY entity_group, entity_id"
-        ).fetchall()
-    except Exception:
-        nodes = []
+    if neo4j_nodes:
+        nodes = [
+            (n["entity_id"], n["entity_group"], n["silver_table"], n["description"])
+            for n in neo4j_nodes
+        ]
+    else:
+        try:
+            nodes = conn.execute(
+                "SELECT entity_id, entity_group, silver_table, description "
+                "FROM meta_kg_nodes ORDER BY entity_group, entity_id"
+            ).fetchall()
+        except Exception:
+            nodes = []
 
-    # If meta_kg_nodes is empty, fall back to reading silver tables directly from DB
     if not nodes:
         live_tables = [
             r[0] for r in conn.execute(
-                "SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'silver_%' ORDER BY table_name"
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_name LIKE 'silver_%' ORDER BY table_name"
             ).fetchall()
         ]
         nodes = [(t.replace("silver_", ""), "Unknown", t, "") for t in live_tables]
 
-    try:
-        edges = conn.execute(
-            "SELECT parent_entity, child_entity, join_column, cardinality, business_meaning "
-            "FROM meta_kg_edges"
-        ).fetchall()
-    except Exception:
-        edges = []
+    if neo4j_edges:
+        edges = [
+            (e["parent_entity"], e["child_entity"], e["join_column"],
+             e["cardinality"], e["business_meaning"])
+            for e in neo4j_edges
+        ]
+    else:
+        try:
+            edges = conn.execute(
+                "SELECT parent_entity, child_entity, join_column, cardinality, business_meaning "
+                "FROM meta_kg_edges"
+            ).fetchall()
+        except Exception:
+            edges = []
 
+    # ── Semantic Layer: try Cube first, fall back to DuckDB ──────────
     try:
-        semantic = conn.execute(
-            "SELECT business_concept, kpi_name, silver_columns, formula, business_rule "
-            "FROM meta_semantic_layer ORDER BY business_concept"
-        ).fetchall()
+        from src.cube_client import get_semantic_mappings
+        cube_mappings = get_semantic_mappings()
     except Exception:
-        semantic = []
+        cube_mappings = None
 
+    if cube_mappings:
+        semantic = [
+            (m["business_concept"], m["kpi_name"], m["silver_columns"],
+             m["formula"], m["business_rule"])
+            for m in cube_mappings
+        ]
+    else:
+        try:
+            semantic = conn.execute(
+                "SELECT business_concept, kpi_name, silver_columns, formula, business_rule "
+                "FROM meta_semantic_layer ORDER BY business_concept"
+            ).fetchall()
+        except Exception:
+            semantic = []
+
+    # ── KPI definitions: always from DuckDB ──────────────────────────
     try:
         kpis = conn.execute(
             "SELECT metric_name, category, definition, formula, benchmark "
@@ -247,9 +290,7 @@ def _get_meta_context(db_path=None) -> str:
     for _, _, silver_table, _ in nodes:
         if silver_table:
             try:
-                cols = conn.execute(
-                    f"DESCRIBE {silver_table}"
-                ).fetchall()
+                cols = conn.execute(f"DESCRIBE {silver_table}").fetchall()
                 table_columns[silver_table] = [f"{c[0]} ({c[1]})" for c in cols]
             except Exception:
                 pass
@@ -258,7 +299,7 @@ def _get_meta_context(db_path=None) -> str:
 
     lines: list[str] = []
 
-    # ── 1. Valid table names (derived from meta_kg_nodes) ─────────────
+    # ── 1. Valid table names ─────────────────────────────────────────
     valid_tables = [row[2] for row in nodes if row[2]]
     lines.append("## Valid Table Names")
     lines.append(
@@ -266,7 +307,7 @@ def _get_meta_context(db_path=None) -> str:
         + ", ".join(valid_tables)
     )
 
-    # ── 2. Table schemas (columns from DESCRIBE, descriptions from meta_kg_nodes) ──
+    # ── 2. Table schemas ─────────────────────────────────────────────
     lines.append("\n## Table Schemas  (exact column names and types)")
     for _, group, silver_table, desc in nodes:
         if not silver_table:
@@ -275,7 +316,7 @@ def _get_meta_context(db_path=None) -> str:
         if silver_table in table_columns:
             lines.append(f"  Columns: {', '.join(table_columns[silver_table])}")
 
-    # ── 3. Join paths (derived from meta_kg_edges) ────────────────────
+    # ── 3. Join paths ────────────────────────────────────────────────
     lines.append("\n## Join Paths  (how to connect tables)")
     for parent, child, join_col, cardinality, meaning in edges:
         lines.append(
@@ -283,7 +324,7 @@ def _get_meta_context(db_path=None) -> str:
             f"({cardinality}): {meaning}"
         )
 
-    # ── 4. Semantic mappings (derived from meta_semantic_layer) ───────
+    # ── 4. Semantic mappings ─────────────────────────────────────────
     lines.append("\n## Semantic Mappings  (business concept → KPI → source columns)")
     current_concept = None
     for concept, kpi, cols, formula, rule in semantic:
@@ -292,7 +333,7 @@ def _get_meta_context(db_path=None) -> str:
             current_concept = concept
         lines.append(f"- **{kpi}**: columns `{cols}` | formula `{formula}` | {rule}")
 
-    # ── 5. KPI definitions (derived from meta_kpi_catalog) ────────────
+    # ── 5. KPI definitions ───────────────────────────────────────────
     lines.append("\n## KPI Definitions")
     current_cat = None
     for metric, cat, defn, formula, benchmark in kpis:
@@ -329,8 +370,8 @@ def build_system_prompt(live_kpis: dict | None = None, db_path=None) -> str:
         kpi_snapshot = "\n## Live KPI Snapshot  (from active sidebar filters)\n" + kpi_lines
 
     return f"""You are an AI analyst embedded in a Healthcare Revenue Cycle Management (RCM) \
-Analytics dashboard backed by a SQLite Medallion-Architecture database \
-(Bronze → Silver → Gold layers).
+Analytics dashboard backed by a DuckDB Medallion-Architecture data warehouse \
+(Bronze → Silver → Gold layers), with a Cube semantic layer and Neo4j knowledge graph.
 
 Your role:
 - Answer natural-language questions about RCM performance.

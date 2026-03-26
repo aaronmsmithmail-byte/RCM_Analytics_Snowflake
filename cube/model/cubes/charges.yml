@@ -1,0 +1,66 @@
+cubes:
+  - name: charges
+    sql_table: silver_charges
+    description: >
+      Line-item charges per encounter at CPT code granularity.
+      Drives charge lag analysis and CPT-level revenue reporting.
+
+    joins:
+      - name: encounters
+        sql: "{CUBE}.encounter_id = {encounters}.encounter_id"
+        relationship: many_to_one
+
+    measures:
+      - name: count
+        type: count
+        description: Total number of charge line items
+
+      - name: total_charges
+        sql: charge_amount
+        type: sum
+        description: Sum of charge amounts
+
+      - name: total_units
+        sql: units
+        type: sum
+        description: Sum of units billed
+
+      - name: avg_charge_per_unit
+        sql: "{total_charges} / NULLIF({total_units}, 0)"
+        type: number
+        description: Average charge amount per unit
+
+      - name: avg_charge_lag
+        sql: "date_diff('day', CAST(service_date AS DATE), CAST(post_date AS DATE))"
+        type: avg
+        description: "Average days between service and charge posting — benchmark: <3 days"
+
+    dimensions:
+      - name: charge_id
+        sql: charge_id
+        type: string
+        primary_key: true
+
+      - name: cpt_code
+        sql: cpt_code
+        type: string
+
+      - name: cpt_description
+        sql: cpt_description
+        type: string
+
+      - name: service_date
+        sql: service_date
+        type: time
+
+      - name: post_date
+        sql: post_date
+        type: time
+
+      - name: icd10_code
+        sql: icd10_code
+        type: string
+
+      - name: encounter_id
+        sql: encounter_id
+        type: string

@@ -119,6 +119,29 @@ def _cte(p: FilterParams):
     )
 
 
+def _try_cube_query(measures, dimensions=None, p: FilterParams = None):
+    """
+    Attempt a metric query through the Cube semantic layer.
+
+    Returns a pandas DataFrame on success, or None if Cube is unavailable
+    (so the caller falls back to raw SQL).
+    """
+    try:
+        from src.cube_client import query_cube, build_cube_filters, is_cube_available
+        if not is_cube_available():
+            return None
+        filters, time_dims = build_cube_filters(
+            p.start_date, p.end_date,
+            payer_id=p.payer_id,
+            department=p.department,
+            encounter_type=p.encounter_type,
+        ) if p else ([], [])
+        return query_cube(measures, dimensions=dimensions,
+                          filters=filters, time_dimensions=time_dims)
+    except Exception:
+        return None
+
+
 def _empty_trend(*columns):
     """Return an empty DataFrame with the given columns."""
     return pd.DataFrame(columns=list(columns))
@@ -332,10 +355,30 @@ def query_denial_rate(p: FilterParams, db_path=None):
     """Calculate Claim Denial Rate.
 
     Denial Rate = (Denied + Appealed Claims) / Total Claims * 100
+    Tries Cube semantic layer first, falls back to raw SQL.
 
     Returns:
         tuple: (denial_rate_percentage, trend_dataframe)
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["claims.count", "claims.denied_count"],
+        dimensions=["claims.period"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        cube_df.columns = ["period", "total_claims", "denied_claims"]
+        total = cube_df["total_claims"].sum()
+        denied = cube_df["denied_claims"].sum()
+        rate = (denied / total * 100) if total > 0 else 0.0
+        cube_df["denial_rate"] = np.where(
+            cube_df["total_claims"] > 0,
+            cube_df["denied_claims"] / cube_df["total_claims"] * 100, 0
+        )
+        cube_df = _set_period_index(cube_df)
+        return round(float(rate), 2), cube_df
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT strftime(CAST(submission_date AS DATE), '%Y-%m') AS period,

@@ -1,0 +1,22 @@
+views:
+  - name: ar_health
+    description: >
+      Accounts receivable health view. Days in A/R, A/R aging buckets,
+      and payment accuracy. Measures how quickly revenue is being collected.
+
+    cubes:
+      - join_path: claims
+        includes:
+          - total_charges
+          - count
+          - date_of_service
+          - period
+          - claim_status
+
+      - join_path: payments
+        prefix: true
+        includes:
+          - total_payments
+          - payment_accuracy_rate
+          - accurate_count
+          - count

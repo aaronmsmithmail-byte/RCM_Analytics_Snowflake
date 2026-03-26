@@ -1,0 +1,30 @@
+views:
+  - name: revenue
+    description: >
+      Revenue performance view. Combines claims, payments, and adjustments to
+      compute gross collection rate, bad debt rate, and average reimbursement
+      per encounter.
+
+    cubes:
+      - join_path: claims
+        includes:
+          - total_charges
+          - count
+          - date_of_service
+          - period
+          - payer_id
+
+      - join_path: claims.encounters
+        includes:
+          - count
+
+      - join_path: payments
+        prefix: true
+        includes:
+          - total_payments
+
+      - join_path: adjustments
+        prefix: true
+        includes:
+          - bad_debt_total
+          - total_adjustments
