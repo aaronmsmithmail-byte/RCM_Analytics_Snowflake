@@ -389,7 +389,7 @@ A GitHub Actions workflow (`.github/workflows/test.yml`) runs automatically on e
 pytest tests/ -v
 ```
 
-**238 tests total** — 151 metric tests (`test_metrics.py`), 40 validator tests (`test_validators.py`), 22 AI SQL tool tests (`test_ai_chat_sql.py`), 15 database tests (`test_database.py`), and 10 AI config tests (`test_ai_chat_config.py`). The metric, validator, and database suites use SQLite `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results. The AI SQL tool tests verify read-only enforcement, result structure, NaN→None conversion, and the LLM result formatter. The AI config tests use `importlib.reload()` to verify env var parsing, bounds clamping, and non-numeric fallback behaviour for `AI_MAX_ROWS` and `AI_MAX_ITERATIONS`.
+**260 tests total** — 151 metric tests (`test_metrics.py`), 40 validator tests (`test_validators.py`), 22 ETL pipeline tests (`test_etl_pipeline.py`), 22 AI SQL tool tests (`test_ai_chat_sql.py`), 15 database tests (`test_database.py`), and 10 AI config tests (`test_ai_chat_config.py`). The metric, validator, and database suites use SQLite `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results. The ETL tests verify CSV→Bronze loading, Bronze→Silver type casting, boolean conversion, NULL/empty PK filtering, and duplicate handling. The AI SQL tool tests verify read-only enforcement, result structure, NaN→None conversion, and the LLM result formatter. The AI config tests use `importlib.reload()` to verify env var parsing, bounds clamping, and non-numeric fallback behaviour for `AI_MAX_ROWS` and `AI_MAX_ITERATIONS`.
 
 ---
 
