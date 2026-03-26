@@ -292,7 +292,25 @@ Every env var the code reads must appear in `.env.example` with:
 
 ---
 
-## 8. Security Standards
+## 8. Error Handling Standards
+
+Two error handling patterns, depending on context:
+
+| Context | On error, return | Example |
+|---------|-----------------|---------|
+| **Client modules** (`cube_client`, `neo4j_client`) | `None` — caller falls back to DuckDB | `get_kg_nodes()` returns `None` |
+| **Metadata/SQL queries** (`_query_meta`, `execute_sql_tool`) | Empty result (`pd.DataFrame()` or `{"error": msg}`) | Page shows empty table instead of crashing |
+| **ETL functions** (`load_csv_to_bronze`) | Skip gracefully with log message | Missing CSV prints `[SKIP]`, continues |
+
+Rules:
+- External service calls (API, database, file I/O) must be wrapped in `try/except`
+- Never crash a Streamlit page — always degrade gracefully
+- Never silently swallow errors — log or return a meaningful empty result
+- Client modules check `is_*_available()` before attempting connections
+
+---
+
+## 9. Security Standards
 
 - SQL injection: **Always** use parameterized queries (`?` placeholders)
 - `execute_sql_tool()`: Rejects non-SELECT/WITH queries before execution

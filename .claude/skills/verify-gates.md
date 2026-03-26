@@ -12,6 +12,9 @@ description: >
 Run all gates below in order. Report results as a pass/fail checklist.
 **All gates must pass before code review or commit.**
 
+> **`make verify`** is the fast version (Gates 1 + 2 only — tests + lint).
+> This skill runs the full 5-gate check including coverage, docs, and standards.
+
 ---
 
 ## Gate 1: Tests
@@ -88,7 +91,7 @@ Present results as a checklist:
 ```
 ## Verification Gates
 
-- [x] Gate 1: Tests — 334 passed, 0 failed
+- [x] Gate 1: Tests — N passed, 0 failed
 - [x] Gate 2: Linting — All checks passed
 - [x] Gate 3: Test coverage — All new functions covered
 - [x] Gate 4: Documentation — Counts match, deps current
@@ -102,7 +105,7 @@ Or if any gate fails:
 ```
 ## Verification Gates
 
-- [x] Gate 1: Tests — 334 passed, 0 failed
+- [x] Gate 1: Tests — N passed, 0 failed
 - [ ] Gate 2: Linting — 3 violations found (see details)
 - [x] Gate 3: Test coverage — All new functions covered
 - [ ] Gate 4: Documentation — CLAUDE.md test count outdated (318 → 334)

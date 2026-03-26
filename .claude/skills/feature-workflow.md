@@ -88,39 +88,32 @@ failing gates.
 
 ## Stage 5: REVIEW
 
-Multi-phase technical review. Run all applicable reviews:
+Two-step review: local pre-commit review, then (optionally) PR review after push.
 
-### Phase A: Plan Compliance
-Verify the implementation matches the approved plan from Stage 2:
+### Step A: Plan Compliance (manual check)
+Before running automated review, verify the implementation matches the plan:
 - All planned files were modified
-- All acceptance criteria are met
+- All acceptance criteria from Stage 2 are met
 - No unplanned scope creep
 
-### Phase B: Pre-Commit Review
-Run the `pre-commit-review` skill which covers:
-- Simplification pass (remove unnecessary abstractions)
-- Structural review (security, performance, types)
-- Quality checks (efficiency, dead code, error handling, documentation)
+### Step B: Pre-Commit Review (local)
+Run the `/pre-commit-review` skill. It performs 4 phases in one pass:
+1. **Simplify** — remove unnecessary abstractions
+2. **Structural review** — security, performance, types
+3. **Standards validation** — check against `standards.md` (naming, SQL, imports, security)
+4. **Quality checks** — efficiency, dead code, error handling, documentation
 
-### Phase C: Standards Validation
-Check changes against `.claude/skills/standards.md`:
-- Data modeling conventions (table/column naming, types)
-- Python naming (functions, classes, constants)
-- Import ordering and package patterns
-- Client module pattern (if applicable)
-- SQL conventions (parameterized queries, CTE pattern)
-- Security (no hardcoded secrets, SQL injection prevention)
+> `/pre-commit-review` is the **only** review needed before committing.
+> It includes standards validation — do NOT run a separate standards check.
 
-### Phase D: Specialized Reviews (as applicable)
-Launch the relevant agents based on what changed:
-- **Code changed**: `code-reviewer` agent
-- **Error handling changed**: `silent-failure-hunter` agent
-- **Tests added/modified**: `pr-test-analyzer` agent
-- **Types added/modified**: `type-design-analyzer` agent
-- **Comments added**: `comment-analyzer` agent
+### Step C: PR Review (after push, if creating a PR)
+After committing and pushing, use one of these commands for GitHub PR review:
+- `/code-review` — focused bug-finding with parallel agents (best for final validation)
+- `/review-pr` — comprehensive multi-agent review (tests, errors, types, comments)
 
-Present the review results to the user. If there are critical or important
-issues, fix them before proceeding.
+> These commands are for **PR review on GitHub**, not for local pre-commit checks.
+
+Fix any 🔴 (must fix) issues before merging. 🟡 (should fix) issues are at your discretion.
 
 ---
 
