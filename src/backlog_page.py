@@ -38,7 +38,7 @@ def _load_backlog() -> pd.DataFrame:
     """Load all backlog items from DuckDB, ordered by priority then date."""
     priority_order = "CASE priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END"
     try:
-        conn = get_connection(read_only=True)
+        conn = get_connection(read_only=False)
         df = conn.execute(
             f"SELECT * FROM feature_backlog ORDER BY {priority_order}, created_at DESC"
         ).fetchdf()

@@ -1134,7 +1134,7 @@ def query_to_dataframe(sql, params=None, db_path=None):
     Returns:
         pd.DataFrame with query results.
     """
-    conn = get_connection(db_path, read_only=True)
+    conn = get_connection(db_path, read_only=False)
     try:
         if params:
             return conn.execute(sql, params).df()
@@ -1218,7 +1218,7 @@ def has_medallion_schema(db_path=None):
     if not os.path.exists(path):
         return False
     try:
-        conn = duckdb.connect(path, read_only=True)
+        conn = duckdb.connect(path, read_only=False)
         # Check both that the table exists and that the schema is current
         # (fail_reason column was added in schema v2).
         conn.execute("SELECT fail_reason FROM silver_claims LIMIT 1")

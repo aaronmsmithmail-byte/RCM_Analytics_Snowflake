@@ -55,7 +55,7 @@ def _check_negative_amounts(db_path=None) -> list[dict]:
         ("silver_operating_costs", "total_rcm_cost"),
     ]
     issues = []
-    conn = get_connection(db_path, read_only=True)
+    conn = get_connection(db_path, read_only=False)
     try:
         for table, col in checks:
             try:
@@ -88,7 +88,7 @@ def _check_orphaned_keys(db_path=None) -> list[dict]:
         ("silver_encounters",  "provider_id", "silver_providers", "provider_id"),
     ]
     issues = []
-    conn = get_connection(db_path, read_only=True)
+    conn = get_connection(db_path, read_only=False)
     try:
         for child_tbl, child_col, parent_tbl, parent_col in checks:
             try:
@@ -127,7 +127,7 @@ def _check_nulls(db_path=None) -> list[dict]:
         "silver_payers":      ["payer_id", "payer_name"],
     }
     issues = []
-    conn = get_connection(db_path, read_only=True)
+    conn = get_connection(db_path, read_only=False)
     try:
         for table, cols in required_non_null.items():
             for col in cols:
@@ -160,7 +160,7 @@ def _check_date_ranges(db_path=None) -> list[dict]:
         "silver_charges":   ["service_date", "post_date"],
     }
     issues = []
-    conn = get_connection(db_path, read_only=True)
+    conn = get_connection(db_path, read_only=False)
     try:
         for table, cols in date_cols.items():
             for col in cols:
@@ -191,7 +191,7 @@ def _check_claim_status_values(db_path=None) -> list[dict]:
     valid = ("Paid", "Denied", "Appealed", "Pending", "Partially Paid")
     placeholders = ",".join("?" * len(valid))
     issues = []
-    conn = get_connection(db_path, read_only=True)
+    conn = get_connection(db_path, read_only=False)
     try:
         try:
             rows = conn.execute(f"""
@@ -225,7 +225,7 @@ def _check_boolean_columns(db_path=None) -> list[dict]:
         "silver_payments": ["is_accurate_payment"],
     }
     issues = []
-    conn = get_connection(db_path, read_only=True)
+    conn = get_connection(db_path, read_only=False)
     try:
         for table, cols in bool_checks.items():
             for col in cols:
