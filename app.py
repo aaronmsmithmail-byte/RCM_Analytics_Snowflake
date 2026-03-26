@@ -23,7 +23,7 @@ Architecture:
     │              │ (src/data_loader.py)│                     │
     │              └──────────┬──────────┘                     │
     │              ┌──────────▼──────────┐                     │
-    │              │ SQLite Database     │                     │
+    │              │ DuckDB Database     │                     │
     │              │ (data/*.db)         │                     │
     │              └─────────────────────┘                     │
     └──────────────────────────────────────────────────────────┘
@@ -86,7 +86,7 @@ from src.ai_chat import (  # AI Assistant tab backend
     build_system_prompt,
     run_agentic_turn,
 )
-from src.data_loader import load_all_data  # Loads all tables from SQLite
+from src.data_loader import load_all_data  # Loads all tables from DuckDB
 from src.metadata_pages import (  # Five supplemental metadata pages
     render_ai_architecture,
     render_data_catalog,
@@ -311,7 +311,7 @@ def _linear_forecast(series: pd.Series, periods_ahead: int = 3):
 
 # ── Load Data ────────────────────────────────────────────────────────
 # @st.cache_data is a Streamlit decorator that caches the return value.
-# On the first run, it calls load_all_data() (which queries SQLite).
+# On the first run, it calls load_all_data() (which queries DuckDB).
 # On subsequent reruns (user interactions), it returns the cached result
 # instantly. This is essential for performance — without caching, every
 # filter change would re-query the entire database.
@@ -322,7 +322,7 @@ def _linear_forecast(series: pd.Series, periods_ahead: int = 3):
 #   - You call st.cache_data.clear()
 @st.cache_data
 def get_data():
-    """Load all RCM data from SQLite (cached after first call)."""
+    """Load all RCM data from DuckDB (cached after first call)."""
     return load_all_data()
 
 
@@ -2191,7 +2191,7 @@ with tab11:
 # TAB 12: AI ASSISTANT
 # =====================================================================
 # Chat interface with tool-calling: the LLM can call run_sql() to
-# execute live SELECT queries against the SQLite database and weave
+# execute live SELECT queries against the DuckDB database and weave
 # the results into its answer.
 #
 # Session state keys:

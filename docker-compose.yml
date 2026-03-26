@@ -19,7 +19,8 @@ services:
       CUBEJS_DB_DUCKDB_DATABASE_PATH: "/cube/data/rcm_analytics.db"
       CUBEJS_SCHEMA_PATH: "/cube/conf/model"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/readyz"]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); http.get('http://localhost:4000/readyz', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+
       interval: 10s
       timeout: 5s
       retries: 10
@@ -42,7 +43,7 @@ services:
       - neo4j_data:/data
       - ./neo4j:/var/lib/neo4j/import
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p rcm_analytics 'RETURN 1' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

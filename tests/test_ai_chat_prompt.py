@@ -61,9 +61,9 @@ class TestGetMetaContext:
         # meta_kpi_catalog should have KPI names
         assert "Days in A/R" in result or "Collection Rate" in result or "Denial Rate" in result
 
-    def test_empty_meta_falls_back_to_sqlite_master(self, db_empty):
+    def test_empty_meta_falls_back_to_schema_introspection(self, db_empty):
         result = _get_meta_context(db_path=db_empty)
-        # Should still return a string with silver table names from sqlite_master
+        # Should still return a string with silver table names from information_schema
         assert isinstance(result, str)
         assert "silver_claims" in result
 

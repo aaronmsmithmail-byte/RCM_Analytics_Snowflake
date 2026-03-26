@@ -10,7 +10,7 @@ Each check returns a list of issue dicts with keys:
     message - human-readable description
 """
 
-import sqlite3
+import duckdb
 
 from src.database import get_connection
 
@@ -63,7 +63,7 @@ def _check_negative_amounts(db_path=None) -> list[dict]:
                         "table":   table,
                         "message": f"{n} negative value(s) found in '{col}'.",
                     })
-            except sqlite3.OperationalError:
+            except duckdb.Error:
                 pass  # table or column doesn't exist — skip
     finally:
         conn.close()
@@ -103,7 +103,7 @@ def _check_orphaned_keys(db_path=None) -> list[dict]:
                             f"IDs not found in '{parent_tbl}.{parent_col}'."
                         ),
                     })
-            except sqlite3.OperationalError:
+            except duckdb.Error:
                 pass  # table doesn't exist — skip
     finally:
         conn.close()
@@ -136,7 +136,7 @@ def _check_nulls(db_path=None) -> list[dict]:
                             "table":   table,
                             "message": f"{n} null value(s) in required column '{table}.{col}'.",
                         })
-                except sqlite3.OperationalError:
+                except duckdb.Error:
                     pass  # table or column doesn't exist — skip
     finally:
         conn.close()
@@ -174,7 +174,7 @@ def _check_date_ranges(db_path=None) -> list[dict]:
                                 f"the expected range ({min_date} – {max_date})."
                             ),
                         })
-                except sqlite3.OperationalError:
+                except duckdb.Error:
                     pass  # table or column doesn't exist — skip
     finally:
         conn.close()
@@ -206,7 +206,7 @@ def _check_claim_status_values(db_path=None) -> list[dict]:
                         f"Expected one of: {sorted(valid)}."
                     ),
                 })
-        except sqlite3.OperationalError:
+        except duckdb.Error:
             pass  # table doesn't exist — skip
     finally:
         conn.close()
@@ -237,7 +237,7 @@ def _check_boolean_columns(db_path=None) -> list[dict]:
                                 "(expected 0 or 1 only)."
                             ),
                         })
-                except sqlite3.OperationalError:
+                except duckdb.Error:
                     pass  # table or column doesn't exist — skip
     finally:
         conn.close()
