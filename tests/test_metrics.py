@@ -1,4 +1,4 @@
-"""Unit tests for src/metrics.py — all 17 RCM metric functions.
+"""Unit tests for src/metrics.py — all 26 RCM metric functions.
 
 All tests use an in-memory SQLite database via pytest's tmp_path fixture,
 populating the Silver layer tables directly to verify SQL-based metric queries.
@@ -27,6 +27,15 @@ from src.metrics import (
     query_payer_mix,
     query_denial_rate_by_payer,
     query_department_performance,
+    query_provider_performance,
+    query_cpt_analysis,
+    query_underpayment_analysis,
+    query_underpayment_trend,
+    query_clean_claim_breakdown,
+    query_patient_responsibility_by_payer,
+    query_patient_responsibility_by_dept,
+    query_patient_responsibility_trend,
+    query_data_freshness,
 )
 
 
@@ -821,3 +830,285 @@ class TestFilterParams:
         gcr, _ = query_gross_collection_rate(params, db_path=db)
         # Outpatient charges: CLM001(1000)+CLM002(2000)=3000, payments=900 → 30%
         assert gcr == pytest.approx(30.0, abs=0.1)
+
+
+# ===========================================================================
+# 18. PROVIDER PERFORMANCE
+# ===========================================================================
+
+class TestQueryProviderPerformance:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        df = query_provider_performance(full_params, db_path=db)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_has_required_columns(self, db, full_params):
+        df = query_provider_performance(full_params, db_path=db)
+        for col in ("provider_id", "provider_name", "specialty", "total_charges",
+                     "total_payments", "collection_rate", "denial_rate",
+                     "clean_claim_rate", "avg_payment_per_encounter"):
+            assert col in df.columns
+
+    def test_returns_both_providers(self, db, full_params):
+        df = query_provider_performance(full_params, db_path=db)
+        assert set(df["provider_id"]) == {"PRV001", "PRV002"}
+
+    def test_collection_rate_non_negative(self, db, full_params):
+        df = query_provider_performance(full_params, db_path=db)
+        assert (df["collection_rate"] >= 0).all()
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        df = query_provider_performance(full_params, db_path=empty_db)
+        assert df.empty
+
+
+# ===========================================================================
+# 19. CPT ANALYSIS
+# ===========================================================================
+
+class TestQueryCptAnalysis:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        df = query_cpt_analysis(full_params, db_path=db)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_has_required_columns(self, db, full_params):
+        df = query_cpt_analysis(full_params, db_path=db)
+        for col in ("cpt_code", "cpt_description", "charge_count", "total_charges",
+                     "avg_charge_per_unit", "denial_rate"):
+            assert col in df.columns
+
+    def test_returns_known_cpt_codes(self, db, full_params):
+        df = query_cpt_analysis(full_params, db_path=db)
+        assert "99213" in df["cpt_code"].values
+        assert "27447" in df["cpt_code"].values
+
+    def test_sorted_by_total_charges_desc(self, db, full_params):
+        df = query_cpt_analysis(full_params, db_path=db)
+        charges = df["total_charges"].tolist()
+        assert charges == sorted(charges, reverse=True)
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        df = query_cpt_analysis(full_params, db_path=empty_db)
+        assert df.empty
+
+
+# ===========================================================================
+# 20. UNDERPAYMENT ANALYSIS
+# ===========================================================================
+
+class TestQueryUnderpaymentAnalysis:
+    def test_returns_tuple(self, db, full_params):
+        result = query_underpayment_analysis(full_params, db_path=db)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+    def test_dataframe_has_required_columns(self, db, full_params):
+        df, _ = query_underpayment_analysis(full_params, db_path=db)
+        for col in ("payer_id", "payer_name", "total_allowed", "total_paid",
+                     "total_underpaid", "underpayment_rate"):
+            assert col in df.columns
+
+    def test_recovery_is_float(self, db, full_params):
+        _, recovery = query_underpayment_analysis(full_params, db_path=db)
+        assert isinstance(recovery, float)
+
+    def test_recovery_non_negative(self, db, full_params):
+        _, recovery = query_underpayment_analysis(full_params, db_path=db)
+        assert recovery >= 0.0
+
+    def test_empty_db_returns_zero_recovery(self, empty_db, full_params):
+        df, recovery = query_underpayment_analysis(full_params, db_path=empty_db)
+        assert df.empty
+        assert recovery == 0.0
+
+
+# ===========================================================================
+# 21. UNDERPAYMENT TREND
+# ===========================================================================
+
+class TestQueryUnderpaymentTrend:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        df = query_underpayment_trend(full_params, db_path=db)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_has_required_columns(self, db, full_params):
+        df = query_underpayment_trend(full_params, db_path=db)
+        for col in ("total_allowed", "total_paid", "total_underpaid", "underpayment_rate"):
+            assert col in df.columns
+
+    def test_index_is_year_month(self, db, full_params):
+        df = query_underpayment_trend(full_params, db_path=db)
+        if not df.empty:
+            assert df.index.name == "year_month"
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        df = query_underpayment_trend(full_params, db_path=empty_db)
+        assert df.empty
+
+
+# ===========================================================================
+# 22. CLEAN CLAIM BREAKDOWN
+# ===========================================================================
+
+class TestQueryCleanClaimBreakdown:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        df = query_clean_claim_breakdown(full_params, db_path=db)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_has_required_columns(self, db, full_params):
+        df = query_clean_claim_breakdown(full_params, db_path=db)
+        for col in ("fail_reason", "label", "count", "total_charges", "pct_of_dirty", "guidance"):
+            assert col in df.columns
+
+    def test_only_dirty_claims_included(self, db, full_params):
+        # CLM002 (CODING_ERROR) and CLM004 (MISSING_AUTH) are dirty
+        df = query_clean_claim_breakdown(full_params, db_path=db)
+        assert set(df["fail_reason"]) == {"CODING_ERROR", "MISSING_AUTH"}
+
+    def test_pct_of_dirty_sums_to_100(self, db, full_params):
+        df = query_clean_claim_breakdown(full_params, db_path=db)
+        if not df.empty:
+            assert df["pct_of_dirty"].sum() == pytest.approx(100.0, abs=0.1)
+
+    def test_labels_mapped(self, db, full_params):
+        df = query_clean_claim_breakdown(full_params, db_path=db)
+        # CODING_ERROR should map to "Invalid CPT/ICD-10 Combination"
+        coding = df[df["fail_reason"] == "CODING_ERROR"]
+        if not coding.empty:
+            assert coding.iloc[0]["label"] == "Invalid CPT/ICD-10 Combination"
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        df = query_clean_claim_breakdown(full_params, db_path=empty_db)
+        assert df.empty
+
+
+# ===========================================================================
+# 23. PATIENT RESPONSIBILITY BY PAYER
+# ===========================================================================
+
+class TestQueryPatientResponsibilityByPayer:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        df = query_patient_responsibility_by_payer(full_params, db_path=db)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_has_required_columns(self, db, full_params):
+        df = query_patient_responsibility_by_payer(full_params, db_path=db)
+        for col in ("payer_name", "payer_type", "total_patient_resp",
+                     "avg_patient_resp", "pct_of_allowed"):
+            assert col in df.columns
+
+    def test_patient_resp_non_negative(self, db, full_params):
+        df = query_patient_responsibility_by_payer(full_params, db_path=db)
+        if not df.empty:
+            assert (df["total_patient_resp"] >= 0).all()
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        df = query_patient_responsibility_by_payer(full_params, db_path=empty_db)
+        assert df.empty
+
+
+# ===========================================================================
+# 24. PATIENT RESPONSIBILITY BY DEPARTMENT
+# ===========================================================================
+
+class TestQueryPatientResponsibilityByDept:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        df = query_patient_responsibility_by_dept(full_params, db_path=db)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_has_required_columns(self, db, full_params):
+        df = query_patient_responsibility_by_dept(full_params, db_path=db)
+        for col in ("department", "encounter_type", "claim_count",
+                     "total_patient_resp", "avg_patient_resp"):
+            assert col in df.columns
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        df = query_patient_responsibility_by_dept(full_params, db_path=empty_db)
+        assert df.empty
+
+
+# ===========================================================================
+# 25. PATIENT RESPONSIBILITY TREND
+# ===========================================================================
+
+class TestQueryPatientResponsibilityTrend:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        df = query_patient_responsibility_trend(full_params, db_path=db)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_has_required_columns(self, db, full_params):
+        df = query_patient_responsibility_trend(full_params, db_path=db)
+        for col in ("total_patient_resp", "total_allowed", "patient_resp_rate"):
+            assert col in df.columns
+
+    def test_index_is_year_month(self, db, full_params):
+        df = query_patient_responsibility_trend(full_params, db_path=db)
+        if not df.empty:
+            assert df.index.name == "year_month"
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        df = query_patient_responsibility_trend(full_params, db_path=empty_db)
+        assert df.empty
+
+
+# ===========================================================================
+# 26. DATA FRESHNESS
+# ===========================================================================
+
+class TestQueryDataFreshness:
+    @pytest.fixture
+    def db_with_pipeline(self, tmp_path):
+        """Database with pipeline_runs populated."""
+        import datetime
+        db_path = str(tmp_path / "test.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA foreign_keys=OFF")
+        create_tables(conn)
+        # Insert a recent pipeline run
+        now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            "INSERT INTO pipeline_runs VALUES (?, ?, ?, ?)",
+            ("claims", now, 100, "claims.csv"),
+        )
+        # Insert a stale pipeline run (72 hours ago)
+        stale = (datetime.datetime.utcnow() - datetime.timedelta(hours=72)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        conn.execute(
+            "INSERT INTO pipeline_runs VALUES (?, ?, ?, ?)",
+            ("payments", stale, 50, "payments.csv"),
+        )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    def test_returns_dataframe(self, db_with_pipeline):
+        import pandas as pd
+        df = query_data_freshness(db_path=db_with_pipeline)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_has_required_columns(self, db_with_pipeline):
+        df = query_data_freshness(db_path=db_with_pipeline)
+        for col in ("domain", "label", "last_loaded_at", "row_count",
+                     "cadence_hours", "age_hours", "status"):
+            assert col in df.columns
+
+    def test_fresh_status_for_recent_data(self, db_with_pipeline):
+        df = query_data_freshness(db_path=db_with_pipeline)
+        claims_row = df[df["domain"] == "claims"]
+        assert claims_row.iloc[0]["status"] == "fresh"
+
+    def test_stale_or_critical_for_old_data(self, db_with_pipeline):
+        df = query_data_freshness(db_path=db_with_pipeline)
+        payments_row = df[df["domain"] == "payments"]
+        assert payments_row.iloc[0]["status"] in ("stale", "critical")
+
+    def test_empty_db_returns_empty(self, empty_db):
+        df = query_data_freshness(db_path=empty_db)
+        assert df.empty
