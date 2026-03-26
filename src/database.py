@@ -643,6 +643,19 @@ CREATE TABLE IF NOT EXISTS meta_kg_edges (
     cardinality      TEXT,
     business_meaning TEXT
 );
+
+CREATE SEQUENCE IF NOT EXISTS seq_feature_backlog START 1;
+CREATE TABLE IF NOT EXISTS feature_backlog (
+    id                  INTEGER PRIMARY KEY DEFAULT nextval('seq_feature_backlog'),
+    title               TEXT NOT NULL,
+    description         TEXT,
+    priority            TEXT NOT NULL DEFAULT 'Medium',
+    acceptance_criteria TEXT,
+    benefits            TEXT,
+    status              TEXT NOT NULL DEFAULT 'Not Started',
+    created_at          TIMESTAMP DEFAULT current_timestamp,
+    updated_at          TIMESTAMP DEFAULT current_timestamp
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -858,8 +871,78 @@ def persist_metadata(conn):
             ),
         )
 
+    # ── feature_backlog (seed only if empty) ──────────────────────────
+    _seed_backlog_examples(conn)
+
     conn.commit()
     print("  [OK] Metadata tables populated (meta_kpi_catalog, meta_semantic_layer, meta_kg_nodes, meta_kg_edges).")
+
+
+def _seed_backlog_examples(conn):
+    """Insert 3 example backlog items only if the table is empty."""
+    count = conn.execute("SELECT COUNT(*) FROM feature_backlog").fetchone()[0]
+    if count > 0:
+        return
+
+    examples = [
+        (
+            "Automated Email Alerts for KPI Threshold Breaches",
+            "Send automated email notifications when KPIs exceed configurable "
+            "thresholds. For example, alert the billing manager when Days in A/R "
+            "exceeds 40 days or Denial Rate exceeds 12%. Include the current "
+            "value, threshold, trend direction, and a deep-link to the relevant "
+            "dashboard tab.",
+            "High",
+            "1. Admin can configure per-KPI thresholds via a settings page\\n"
+            "2. Emails sent within 5 minutes of threshold breach\\n"
+            "3. Email includes KPI name, current value, threshold, and dashboard link\\n"
+            "4. Duplicate alerts suppressed for 24 hours",
+            "Proactive issue detection reduces time-to-action on revenue cycle "
+            "problems. Catch denial spikes and A/R aging before they compound "
+            "into significant revenue loss.",
+            "Not Started",
+        ),
+        (
+            "Payer Contract Rate Comparison",
+            "Add a new dashboard tab that compares actual reimbursement rates "
+            "against contracted rates by payer. Highlight underpayments where "
+            "the actual payment is below the contracted rate, and calculate "
+            "the total underpayment amount by payer over a configurable period.",
+            "Medium",
+            "1. Upload or configure contracted rates per CPT code per payer\\n"
+            "2. Dashboard shows expected vs. actual reimbursement side-by-side\\n"
+            "3. Underpayment flag with dollar amount for each claim\\n"
+            "4. Summary view: total underpayment by payer, sorted descending",
+            "Identifies revenue leakage from payer underpayments. Many practices "
+            "lose 2-5% of revenue to underpayments that go undetected without "
+            "systematic contract-rate comparison.",
+            "Not Started",
+        ),
+        (
+            "Historical Trend Forecasting with ML",
+            "Use time-series machine learning models (Prophet or similar) to "
+            "forecast A/R aging, denial rates, collection rates, and revenue "
+            "trends 3-6 months into the future. Display forecasts alongside "
+            "historical actuals on the existing trend charts.",
+            "Low",
+            "1. Forecast generated for at least 4 core KPIs\\n"
+            "2. Confidence intervals shown on forecast charts\\n"
+            "3. Forecasts update automatically when new data is loaded\\n"
+            "4. Model accuracy metrics displayed (MAPE, MAE)",
+            "Enables proactive financial planning and early warning of negative "
+            "trends. Helps leadership allocate resources before problems "
+            "materialize rather than reacting after the fact.",
+            "Not Started",
+        ),
+    ]
+
+    for title, desc, priority, criteria, benefits, status in examples:
+        conn.execute(
+            "INSERT INTO feature_backlog "
+            "(title, description, priority, acceptance_criteria, benefits, status) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (title, desc, priority, criteria, benefits, status),
+        )
 
 
 def initialize_database(db_path=None):

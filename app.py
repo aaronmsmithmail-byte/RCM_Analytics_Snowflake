@@ -87,6 +87,7 @@ from src.ai_chat import (  # AI Assistant tab backend
     run_agentic_turn,
 )
 from src.data_loader import load_all_data  # Loads all tables from DuckDB
+from src.backlog_page import render_feature_backlog
 from src.metadata_pages import (  # Five supplemental metadata pages
     render_ai_architecture,
     render_data_catalog,
@@ -539,6 +540,12 @@ if st.sidebar.button("AI Architecture", width="stretch"):
     st.session_state["active_page"] = "ai_architecture"
 if st.sidebar.button("Data Validation", width="stretch"):
     st.session_state["active_page"] = "data_validation"
+# ── Feature Backlog navigation (sidebar) ─────────────────────────────
+st.sidebar.divider()
+st.sidebar.markdown("### Feature Backlog")
+if st.sidebar.button("Review/Edit Backlog", width="stretch"):
+    st.session_state["active_page"] = "feature_backlog"
+
 if st.session_state["active_page"] != "dashboard":
     if st.sidebar.button("Back to Dashboard", type="primary", width="stretch"):
         st.session_state["active_page"] = "dashboard"
@@ -562,6 +569,9 @@ elif _active == "ai_architecture":
     st.stop()
 elif _active == "data_validation":
     render_data_validation(_validation_issues)
+    st.stop()
+elif _active == "feature_backlog":
+    render_feature_backlog()
     st.stop()
 
 # ── Header ───────────────────────────────────────────────────────────
@@ -2413,13 +2423,6 @@ with tab12:
 # Show a summary of the filtered data volume in the sidebar so users
 # always know how much data they're looking at.
 st.sidebar.divider()
-st.sidebar.markdown("### Data Summary")
-st.sidebar.markdown(f"- **Patients:** {len(data['patients']):,}")
-st.sidebar.markdown(f"- **Providers:** {len(data['providers']):,}")
-st.sidebar.markdown(f"- **Encounters:** {len(f_encounters):,}")
-st.sidebar.markdown(f"- **Claims:** {len(f_claims):,}")
-st.sidebar.markdown(f"- **Payments:** {len(f_payments):,}")
-st.sidebar.markdown(f"- **Denials:** {len(f_denials):,}")
 
 if _validation_issues:
     st.sidebar.divider()
