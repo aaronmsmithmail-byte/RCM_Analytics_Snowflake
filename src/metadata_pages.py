@@ -666,7 +666,7 @@ def render_knowledge_graph():
             ]
 
     if _using_neo4j:
-        st.success("Connected to Neo4j", icon="\u2713")
+        st.success("Connected to Neo4j", icon="✅")
 
     st.subheader("Entity Relationship Diagram")
 
@@ -765,7 +765,7 @@ def render_semantic_layer():
     except Exception:
         pass
     if _using_cube:
-        st.success("Connected to Cube semantic layer", icon="\u2713")
+        st.success("Connected to Cube semantic layer", icon="✅")
 
     # ── Business Concept → KPI graph ──
     st.subheader("Business Concept Map")
