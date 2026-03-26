@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # ── Cube — Semantic Layer ──────────────────────────────────
   # Provides REST API at http://localhost:4000 for metric queries
