@@ -1,0 +1,30 @@
+views:
+  - name: collections
+    description: >
+      Collections performance view. Net collection rate, gross collection rate,
+      and cost to collect. NCR = payments / (charges - adjustments).
+
+    cubes:
+      - join_path: claims
+        includes:
+          - total_charges
+          - count
+          - date_of_service
+          - period
+          - payer_id
+
+      - join_path: payments
+        prefix: true
+        includes:
+          - total_payments
+
+      - join_path: adjustments
+        prefix: true
+        includes:
+          - total_adjustments
+          - contractual_total
+
+      - join_path: operating_costs
+        prefix: true
+        includes:
+          - total_rcm_cost

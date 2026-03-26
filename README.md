@@ -108,6 +108,30 @@ streamlit run app.py
 
 The app opens at `http://localhost:8501`. The first launch initializes the database (a few seconds); subsequent launches use the cached database.
 
+### Full Stack with Docker Compose (Cube + Neo4j)
+
+For the enterprise experience with Cube semantic layer and Neo4j knowledge graph:
+
+```bash
+# Generate data first (if not already done)
+python generate_sample_data.py
+
+# Start Cube + Neo4j + Streamlit
+docker compose up -d
+
+# Open the dashboard
+open http://localhost:8501
+```
+
+Services:
+| Service | URL | Purpose |
+|---------|-----|---------|
+| Streamlit | http://localhost:8501 | Dashboard |
+| Cube | http://localhost:4000 | Semantic layer REST API + Playground |
+| Neo4j | http://localhost:7474 | Knowledge graph browser |
+
+The app auto-detects available services and shows connection status on the metadata pages. When Cube/Neo4j are unavailable, it falls back to DuckDB seamlessly.
+
 ---
 
 ## Data Architecture — Medallion Layers
@@ -402,6 +426,8 @@ pytest tests/ -v
 | plotly | ≥ 5.18.0 | Interactive visualizations |
 | numpy | ≥ 1.24.0 | Numerical calculations and trend extrapolation |
 | duckdb | ≥ 1.0.0 | Columnar OLAP database engine (Snowflake-like architecture) |
+| requests | ≥ 2.28.0 | Cube REST API client for semantic layer queries |
+| neo4j | ≥ 5.0.0 | Neo4j Python driver for knowledge graph queries |
 | openpyxl | ≥ 3.1.0 | Excel export support |
 | openai | ≥ 1.0.0 | OpenRouter API client (OpenAI-compatible) for the AI tab |
 | python-dotenv | ≥ 1.0.0 | Loads `OPENROUTER_API_KEY` from the `.env` file |

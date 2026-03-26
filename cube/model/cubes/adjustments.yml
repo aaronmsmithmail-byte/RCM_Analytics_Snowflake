@@ -1,0 +1,53 @@
+cubes:
+  - name: adjustments
+    sql_table: silver_adjustments
+    description: >
+      Contractual write-offs and balance adjustments applied to claims.
+      Drives net collection rate and bad debt rate calculations.
+
+    joins:
+      - name: claims
+        sql: "{CUBE}.claim_id = {claims}.claim_id"
+        relationship: many_to_one
+
+    measures:
+      - name: count
+        type: count
+        description: Total number of adjustments
+
+      - name: total_adjustments
+        sql: adjustment_amount
+        type: sum
+        description: Sum of all adjustment amounts
+
+      - name: bad_debt_total
+        sql: "CASE WHEN adjustment_type_code = 'WRITEOFF' THEN adjustment_amount ELSE 0 END"
+        type: sum
+        description: Sum of bad debt write-off amounts
+
+      - name: contractual_total
+        sql: "CASE WHEN adjustment_type_code = 'CONTRACTUAL' THEN adjustment_amount ELSE 0 END"
+        type: sum
+        description: Sum of contractual adjustment amounts
+
+    dimensions:
+      - name: adjustment_id
+        sql: adjustment_id
+        type: string
+        primary_key: true
+
+      - name: adjustment_type_code
+        sql: adjustment_type_code
+        type: string
+
+      - name: adjustment_type_description
+        sql: adjustment_type_description
+        type: string
+
+      - name: adjustment_date
+        sql: adjustment_date
+        type: time
+
+      - name: claim_id
+        sql: claim_id
+        type: string

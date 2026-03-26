@@ -1,0 +1,88 @@
+cubes:
+  - name: claims
+    sql_table: silver_claims
+    description: >
+      Insurance claims submitted to payers for reimbursement. Central fact table
+      for most RCM KPIs including denial rate, clean claim rate, and A/R metrics.
+
+    joins:
+      - name: encounters
+        sql: "{CUBE}.encounter_id = {encounters}.encounter_id"
+        relationship: many_to_one
+
+      - name: payers
+        sql: "{CUBE}.payer_id = {payers}.payer_id"
+        relationship: many_to_one
+
+      - name: patients
+        sql: "{CUBE}.patient_id = {patients}.patient_id"
+        relationship: many_to_one
+
+    measures:
+      - name: count
+        type: count
+        description: Total number of claims
+
+      - name: total_charges
+        sql: total_charge_amount
+        type: sum
+        description: Sum of billed charge amounts across all claims
+
+      - name: denied_count
+        sql: "CASE WHEN claim_status IN ('Denied', 'Appealed') THEN 1 ELSE 0 END"
+        type: sum
+        description: Number of claims denied or appealed
+
+      - name: clean_count
+        sql: is_clean_claim
+        type: sum
+        description: Number of claims that passed payer edits on first submission
+
+      - name: denial_rate
+        sql: "{denied_count} * 100.0 / NULLIF({count}, 0)"
+        type: number
+        description: "Percentage of claims denied — benchmark: <5%"
+
+      - name: clean_claim_rate
+        sql: "{clean_count} * 100.0 / NULLIF({count}, 0)"
+        type: number
+        description: "Percentage of claims accepted on first pass — benchmark: >90%"
+
+    dimensions:
+      - name: claim_id
+        sql: claim_id
+        type: string
+        primary_key: true
+
+      - name: date_of_service
+        sql: date_of_service
+        type: time
+
+      - name: submission_date
+        sql: submission_date
+        type: time
+
+      - name: claim_status
+        sql: claim_status
+        type: string
+
+      - name: submission_method
+        sql: submission_method
+        type: string
+
+      - name: fail_reason
+        sql: fail_reason
+        type: string
+
+      - name: payer_id
+        sql: payer_id
+        type: string
+
+      - name: encounter_id
+        sql: encounter_id
+        type: string
+
+      - name: period
+        sql: "strftime(CAST(date_of_service AS DATE), '%Y-%m')"
+        type: string
+        description: Year-month period for trend analysis
