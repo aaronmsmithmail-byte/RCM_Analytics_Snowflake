@@ -25,7 +25,7 @@ This dashboard provides healthcare organizations with interactive visualizations
 
 Every data tab includes **CSV and Excel export buttons**. A **KPI alert system** in the sidebar flags threshold breaches in real time, and a **data pipeline freshness panel** shows the last ETL run time and status for each of the 10 data domains.
 
-The **AI Assistant** tab uses an agentic tool-calling loop: the model can call `run_sql()` to execute live SELECT queries against the SQLite database, receive the results, and weave them into its answer — all within a single conversational turn.  Requires a free [OpenRouter](https://openrouter.ai/keys) API key.
+The **AI Assistant** tab uses an agentic tool-calling loop: the model can call `run_sql()` to execute live SELECT queries against the DuckDB database, receive the results, and weave them into its answer — all within a single conversational turn.  Requires a free [OpenRouter](https://openrouter.ai/keys) API key.
 
 ---
 
@@ -80,7 +80,7 @@ This creates 10 CSV files in the `data/` directory covering Jan 2024 – Dec 202
 | `adjustments.csv` | 600 | Billing System | Contractual, writeoff, and charity adjustments |
 | `operating_costs.csv` | 24 | ERP / Finance | Monthly RCM operational costs |
 
-On first launch, the app automatically loads these CSVs into a local SQLite database using the medallion pipeline (Bronze → Silver → Gold). No manual database setup is required.
+On first launch, the app automatically loads these CSVs into a local DuckDB database using the medallion pipeline (Bronze → Silver → Gold). No manual database setup is required.
 
 > **Schema migration:** If you regenerate sample data after a previous run, the app detects the schema version automatically and rebuilds all three medallion layers cleanly.
 
@@ -102,7 +102,21 @@ The `.env` file is listed in `.gitignore` and will never be committed.  See the 
 
 ### 6. Run the dashboard
 
+**One-command startup (recommended):**
+
 ```bash
+./start.sh           # Full stack: venv + deps + data + Docker + Streamlit
+./start.sh --local   # Streamlit only (no Docker, DuckDB fallback)
+```
+
+The script handles everything: creates/activates the virtual environment, installs dependencies, generates sample data if needed, starts Docker services (Cube + Neo4j) if available, and launches Streamlit.
+
+**Or run each step manually:**
+
+```bash
+source venv/bin/activate
+pip install -r requirements.txt
+python generate_sample_data.py
 streamlit run app.py
 ```
 
@@ -113,17 +127,16 @@ The app opens at `http://localhost:8501`. The first launch initializes the datab
 For the enterprise experience with Cube semantic layer and Neo4j knowledge graph:
 
 ```bash
-# Generate data first (if not already done)
-python generate_sample_data.py
-
-# Start Cube + Neo4j + Streamlit
-docker compose up -d
-
-# Open the dashboard
-open http://localhost:8501
+./start.sh    # handles everything, including Docker
 ```
 
-Services:
+Or manually:
+
+```bash
+docker compose up -d
+streamlit run app.py
+```
+
 | Service | URL | Purpose |
 |---------|-----|---------|
 | Streamlit | http://localhost:8501 | Dashboard |
@@ -136,7 +149,7 @@ The app auto-detects available services and shows connection status on the metad
 
 ## Data Architecture — Medallion Layers
 
-All data flows through a three-layer medallion architecture stored in a local SQLite database (`rcm_analytics.db`):
+All data flows through a three-layer medallion architecture stored in a local DuckDB database (`rcm_analytics.db`):
 
 | Layer | Tables/Views | Description |
 |-------|-------------|-------------|
@@ -217,7 +230,7 @@ All configuration is handled through environment variables loaded from a `.env` 
 | `OPENROUTER_MODEL` | `openai/gpt-4o-mini` | No | LLM model for the AI Assistant tab. Any model on [openrouter.ai/models](https://openrouter.ai/models) works. |
 | `AI_MAX_ROWS` | `100` | No | Maximum rows the AI tool returns per SQL query. Lower to reduce token cost; raise for wider result sets (min 10). |
 | `AI_MAX_ITERATIONS` | `8` | No | Maximum tool-call loop iterations per AI turn — one iteration = one SQL query + one LLM round-trip (min 1). |
-| `RCM_DB_PATH` | `./data/rcm_analytics.db` | No | Path to the SQLite database file. Override for Docker volume mounts or shared network paths. |
+| `RCM_DB_PATH` | `./data/rcm_analytics.db` | No | Path to the DuckDB database file. Override for Docker volume mounts or shared network paths. |
 | `RCM_DATA_DIR` | `./data/` | No | Directory containing the CSV source files. Used by `generate_sample_data.py` and the ETL pipeline. |
 | `STREAMLIT_SERVER_PORT` | `8501` | No | Port the Streamlit server listens on. Standard Streamlit env var. |
 | `STREAMLIT_SERVER_ADDRESS` | `localhost` | No | Bind address. Set to `0.0.0.0` to accept external connections (Docker). |
@@ -334,7 +347,7 @@ A conversational interface backed by an **agentic tool-calling loop**:
 
 1. A system prompt is built fresh each turn from the four `meta_*` tables (KPI definitions, semantic mappings, entity descriptions, relationships) plus the current live KPI values and active sidebar filters.
 2. The selected model (via OpenRouter) reasons over the context and decides whether to answer from the snapshot or call `run_sql()`.
-3. `run_sql()` executes a read-only SELECT/WITH query against the SQLite database, returns structured results (capped at 100 rows), and feeds them back to the model.  The loop repeats until the model returns a final text response.
+3. `run_sql()` executes a read-only SELECT/WITH query against the DuckDB database, returns structured results (capped at 100 rows), and feeds them back to the model.  The loop repeats until the model returns a final text response.
 4. Each SQL query issued by the model is shown in a collapsible expander with the exact SQL and a scrollable results table.
 
 **Setup:** add `OPENROUTER_API_KEY=<your_key>` to a `.env` file in the project root and restart the app.  Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys).
@@ -413,7 +426,7 @@ A GitHub Actions workflow (`.github/workflows/test.yml`) runs automatically on e
 pytest tests/ -v
 ```
 
-**318 tests total** — 151 metric tests (`test_metrics.py`), 40 validator tests (`test_validators.py`), 22 ETL pipeline tests (`test_etl_pipeline.py`), 22 AI SQL tool tests (`test_ai_chat_sql.py`), 19 data loader tests (`test_data_loader.py`), 15 AI prompt tests (`test_ai_chat_prompt.py`), 15 database tests (`test_database.py`), 13 app utility tests (`test_app_utils.py`), 11 AI agentic loop tests (`test_ai_chat_agentic.py`), and 10 AI config tests (`test_ai_chat_config.py`). The metric, validator, and database suites use SQLite `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results. The ETL tests verify CSV→Bronze loading, Bronze→Silver type casting, boolean conversion, NULL/empty PK filtering, and duplicate handling. The data loader tests cover date parsing, boolean parsing, column validation, and full Silver/Gold integration loading. The app utility tests cover CSV/Excel export and linear trend forecasting. The AI prompt tests verify system prompt construction from meta_* tables and KPI snapshot injection. The AI agentic loop tests use mocked OpenAI clients to verify tool-calling flow, message history mutation, max iteration limits, and API key validation. The AI SQL tool tests verify read-only enforcement, result structure, NaN→None conversion, and the LLM result formatter. The AI config tests use `importlib.reload()` to verify env var parsing, bounds clamping, and non-numeric fallback behaviour for `AI_MAX_ROWS` and `AI_MAX_ITERATIONS`.
+**318 tests total** — 151 metric tests (`test_metrics.py`), 40 validator tests (`test_validators.py`), 22 ETL pipeline tests (`test_etl_pipeline.py`), 22 AI SQL tool tests (`test_ai_chat_sql.py`), 19 data loader tests (`test_data_loader.py`), 15 AI prompt tests (`test_ai_chat_prompt.py`), 15 database tests (`test_database.py`), 13 app utility tests (`test_app_utils.py`), 11 AI agentic loop tests (`test_ai_chat_agentic.py`), and 10 AI config tests (`test_ai_chat_config.py`). The metric, validator, and database suites use DuckDB `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results. The ETL tests verify CSV→Bronze loading, Bronze→Silver type casting, boolean conversion, NULL/empty PK filtering, and duplicate handling. The data loader tests cover date parsing, boolean parsing, column validation, and full Silver/Gold integration loading. The app utility tests cover CSV/Excel export and linear trend forecasting. The AI prompt tests verify system prompt construction from meta_* tables and KPI snapshot injection. The AI agentic loop tests use mocked OpenAI clients to verify tool-calling flow, message history mutation, max iteration limits, and API key validation. The AI SQL tool tests verify read-only enforcement, result structure, NaN→None conversion, and the LLM result formatter. The AI config tests use `importlib.reload()` to verify env var parsing, bounds clamping, and non-numeric fallback behaviour for `AI_MAX_ROWS` and `AI_MAX_ITERATIONS`.
 
 ---
 
