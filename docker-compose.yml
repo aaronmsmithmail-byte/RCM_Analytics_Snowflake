@@ -35,7 +35,6 @@ services:
       - "7687:7687"   # Bolt protocol
     environment:
       NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD}"
-      NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
       NEO4J_PLUGINS: '[]'
       NEO4J_server_memory_heap_initial__size: "256m"
       NEO4J_server_memory_heap_max__size: "512m"
@@ -43,7 +42,7 @@ services:
       - neo4j_data:/data
       - ./neo4j:/var/lib/neo4j/import
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p $${NEO4J_PASSWORD} 'RETURN 1' || exit 1"]
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$$(echo $$NEO4J_AUTH | cut -d/ -f2)\" 'RETURN 1' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
