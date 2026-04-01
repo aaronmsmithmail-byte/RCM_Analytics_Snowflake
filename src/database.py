@@ -803,6 +803,7 @@ def persist_metadata(conn):
         "Payment Accuracy Rate":          "≥ 95%",
         "Bad Debt Rate":                  "≤ 3%",
         "Cost to Collect":                "≤ 3%",
+        "Underpayment Rate":              "≤ 5%",
     }
     for kpi in _KPI_CATALOG:
         conn.execute(

@@ -183,6 +183,54 @@ _KPI_CATALOG_FALLBACK = [
         "Data Sources": "silver_encounters.department, silver_payments.payment_amount, silver_claims.encounter_id",
         "Dashboard Tab": "Department Performance",
     },
+    {
+        "Metric": "Provider Performance",
+        "Category": "Segmentation",
+        "Definition": "Collection rate, denial rate, and clean claim rate scored per provider — highlights outliers.",
+        "Formula": "SUM(payments)/SUM(charges), Denied/Total, Clean/Total GROUP BY provider_id",
+        "Data Sources": "silver_providers.provider_id, silver_claims.*, silver_payments.payment_amount, silver_encounters.provider_id",
+        "Dashboard Tab": "Provider Performance",
+    },
+    {
+        "Metric": "CPT Code Analysis",
+        "Category": "Segmentation",
+        "Definition": "Revenue, denial rate, and charge concentration by procedure code — identifies high-value and high-risk CPTs.",
+        "Formula": "SUM(charge_amount), COUNT(*), denial_rate GROUP BY cpt_code",
+        "Data Sources": "silver_charges.cpt_code, silver_charges.charge_amount, silver_claims.claim_status, silver_payments.payment_amount",
+        "Dashboard Tab": "CPT Code Analysis",
+    },
+    {
+        "Metric": "Underpayment Rate",
+        "Category": "Recovery & Appeals",
+        "Definition": "Percentage of payments where the payer paid less than the contracted allowed amount — a direct contractual recovery opportunity.",
+        "Formula": "COUNT(payment_amount < allowed_amount) / COUNT(payments) × 100",
+        "Data Sources": "silver_payments.allowed_amount, silver_payments.payment_amount, silver_payers.payer_name",
+        "Dashboard Tab": "Underpayment Analysis",
+    },
+    {
+        "Metric": "Clean Claim Scrubbing Breakdown",
+        "Category": "Claims Quality",
+        "Definition": "Distribution of scrubbing fail reasons for dirty claims — root cause analysis for claim rejection prevention.",
+        "Formula": "COUNT(*) GROUP BY fail_reason WHERE is_clean_claim = 0",
+        "Data Sources": "silver_claims.fail_reason, silver_claims.is_clean_claim",
+        "Dashboard Tab": "Claims & Denials",
+    },
+    {
+        "Metric": "Patient Financial Responsibility",
+        "Category": "Collections",
+        "Definition": "Patient-owed portion (co-pay, deductible, coinsurance) by payer, department, and encounter type.",
+        "Formula": "SUM(total_charge_amount − payment_amount) GROUP BY payer/dept",
+        "Data Sources": "silver_payments.allowed_amount, silver_payments.payment_amount, silver_claims.total_charge_amount, silver_payers.payer_type",
+        "Dashboard Tab": "Patient Responsibility",
+    },
+    {
+        "Metric": "Data Freshness",
+        "Category": "Operational",
+        "Definition": "Last ETL load time, row count, and staleness status per data domain — monitors pipeline health.",
+        "Formula": "NOW() − last_loaded_at per domain",
+        "Data Sources": "pipeline_runs.domain, pipeline_runs.last_loaded_at, pipeline_runs.row_count",
+        "Dashboard Tab": "Executive Summary (sidebar)",
+    },
 ]
 
 _TABLE_CATALOG = [
@@ -258,7 +306,7 @@ _KG_NODES = [
      "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date"},
     {"id": "payments",    "label": "payments",    "x": 2.5, "y": 1.0, "color": "#38c172", "size": 26,
      "group": "Transactional", "source_system": "Clearinghouse / ERA",
-     "hover": "silver_payments: payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER"},
+     "hover": "silver_payments: payment_id PK, claim_id FK, payer_id FK → silver_payers, payment_amount REAL, allowed_amount REAL, is_accurate_payment INTEGER"},
     {"id": "denials",     "label": "denials",     "x": 5.0, "y": 0.5, "color": "#38c172", "size": 26,
      "group": "Transactional", "source_system": "Clearinghouse / ERA",
      "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL"},
@@ -278,6 +326,8 @@ _KG_EDGES = [
     {"source": "encounters","target": "charges",       "label": "1:N (encounter_id)"},
     {"source": "encounters","target": "claims",        "label": "1:N (encounter_id)"},
     {"source": "payers",    "target": "claims",        "label": "1:N (payer_id)"},
+    {"source": "patients",  "target": "claims",        "label": "1:N (patient_id)"},
+    {"source": "payers",    "target": "payments",      "label": "1:N (payer_id)"},
     {"source": "claims",    "target": "payments",      "label": "1:N (claim_id)"},
     {"source": "claims",    "target": "denials",       "label": "1:N (claim_id)"},
     {"source": "claims",    "target": "adjustments",   "label": "1:N (claim_id)"},
@@ -287,6 +337,8 @@ _KG_RELATIONSHIPS = [
     {"parent_table": "payers",    "child_table": "patients",     "join_column": "primary_payer_id", "cardinality": "1:N", "business_meaning": "Each patient has one primary payer"},
     {"parent_table": "payers",    "child_table": "claims",       "join_column": "payer_id",         "cardinality": "1:N", "business_meaning": "Claims are billed to one payer"},
     {"parent_table": "patients",  "child_table": "encounters",   "join_column": "patient_id",       "cardinality": "1:N", "business_meaning": "A patient can have many visits"},
+    {"parent_table": "patients",  "child_table": "claims",       "join_column": "patient_id",       "cardinality": "1:N", "business_meaning": "Claims track which patient received services"},
+    {"parent_table": "payers",    "child_table": "payments",     "join_column": "payer_id",         "cardinality": "1:N", "business_meaning": "Payments are remitted by a specific payer"},
     {"parent_table": "providers", "child_table": "encounters",   "join_column": "provider_id",      "cardinality": "1:N", "business_meaning": "A provider sees many patients"},
     {"parent_table": "encounters","child_table": "charges",      "join_column": "encounter_id",     "cardinality": "1:N", "business_meaning": "Each visit generates line-item charges"},
     {"parent_table": "encounters","child_table": "claims",       "join_column": "encounter_id",     "cardinality": "1:N", "business_meaning": "Each visit produces one or more insurance claims"},
@@ -317,6 +369,12 @@ _SEMANTIC_LAYER_FALLBACK = [
     {"business_concept": "Payer Perf.",   "kpi_name": "Payer Mix",                   "silver_columns": "silver_payments.payment_amount, silver_payers.payer_type, silver_claims.payer_id",                                              "formula": "SUM(payments) GROUP BY payer_type",            "business_rule": "High self-pay mix → higher collection risk"},
     {"business_concept": "Payer Perf.",   "kpi_name": "Denial Rate by Payer",        "silver_columns": "silver_claims.claim_status, silver_claims.payer_id, silver_payers.payer_name",                                                  "formula": "Denied/Total GROUP BY payer",                  "business_rule": "Identifies payers with problematic contracts/edits"},
     {"business_concept": "Dept Perf.",    "kpi_name": "Department Performance",      "silver_columns": "silver_encounters.department, silver_payments.payment_amount, silver_claims.encounter_id",                                       "formula": "SUM(payments), COUNT(encounters) GROUP BY dept","business_rule": "Revenue and volume by clinical department"},
+    {"business_concept": "Provider Perf.","kpi_name": "Provider Performance",       "silver_columns": "silver_providers.provider_id, silver_encounters.provider_id, silver_claims.*, silver_payments.payment_amount",                            "formula": "SUM(payments)/SUM(charges), Denied/Total GROUP BY provider", "business_rule": "Identifies high-performing and underperforming providers"},
+    {"business_concept": "Procedure Perf.","kpi_name": "CPT Code Analysis",         "silver_columns": "silver_charges.cpt_code, silver_charges.charge_amount, silver_claims.claim_status, silver_payments.payment_amount",                       "formula": "SUM(charge_amount), denial_rate GROUP BY cpt_code",          "business_rule": "High-volume CPTs with high denial rates need coding review"},
+    {"business_concept": "Recovery",      "kpi_name": "Underpayment Rate",          "silver_columns": "silver_payments.allowed_amount, silver_payments.payment_amount, silver_payers.payer_name",                                                 "formula": "COUNT(paid < allowed)/COUNT(payments)×100",                  "business_rule": "Target ≤5%; systematic underpayment signals contract issues"},
+    {"business_concept": "Claims Quality","kpi_name": "Clean Claim Breakdown",      "silver_columns": "silver_claims.fail_reason, silver_claims.is_clean_claim",                                                                                  "formula": "COUNT(*) GROUP BY fail_reason WHERE NOT clean",              "business_rule": "Top fail reasons drive scrubbing rule improvements"},
+    {"business_concept": "Patient Resp.", "kpi_name": "Patient Financial Responsibility","silver_columns": "silver_payments.allowed_amount, silver_payments.payment_amount, silver_claims.total_charge_amount, silver_payers.payer_type",          "formula": "SUM(charge − payment) GROUP BY payer/dept",                  "business_rule": "High patient responsibility with low collection = bad debt risk"},
+    {"business_concept": "Operational",   "kpi_name": "Data Freshness",             "silver_columns": "pipeline_runs.domain, pipeline_runs.last_loaded_at, pipeline_runs.row_count",                                                              "formula": "NOW() − last_loaded_at per domain",                          "business_rule": "Stale data (>24h) triggers pipeline investigation"},
 ]
 
 # Aliases for database.py imports (which expect these names without _FALLBACK suffix)
@@ -663,7 +721,7 @@ def render_data_lineage():
 def render_knowledge_graph():
     """Interactive entity-relationship diagram — sourced from Neo4j, falls back to DuckDB."""
     st.title("Knowledge Graph")
-    st.caption("Entity relationships across the 10 data tables. Powered by Neo4j (with DuckDB fallback).")
+    st.caption("Entity relationships across the 10 data tables (11 foreign-key relationships). Powered by Neo4j (with DuckDB fallback).")
 
     # ── Try Neo4j first, fall back to DuckDB ─────────────────────────
     neo4j_nodes = None
@@ -819,19 +877,28 @@ def render_semantic_layer():
         "Revenue":           {"color": "#e3342f", "bg": "#fef2f2",
                               "kpis": ["Bad Debt Rate", "Avg Reimbursement"]},
         "Collections":       {"color": "#e8a838", "bg": "#fffbeb",
-                              "kpis": ["NCR", "GCR", "Cost to Collect"]},
+                              "kpis": ["NCR", "GCR", "Cost to Collect",
+                                       "Patient Responsibility"]},
         "Claims Quality":    {"color": "#38c172", "bg": "#f0fdf4",
                               "kpis": ["Clean Claim Rate", "Denial Rate",
-                                       "First-Pass Rate", "Charge Lag"]},
+                                       "First-Pass Rate", "Charge Lag",
+                                       "Scrubbing Breakdown"]},
         "A/R Health":        {"color": "#5b8dee", "bg": "#eff6ff",
                               "kpis": ["Days in A/R", "A/R Aging",
                                        "Payment Accuracy"]},
         "Recovery":          {"color": "#20c997", "bg": "#ecfdf5",
-                              "kpis": ["Appeal Success Rate", "Denial Reasons"]},
+                              "kpis": ["Appeal Success Rate", "Denial Reasons",
+                                       "Underpayment Rate"]},
         "Payer Perf.":       {"color": "#9561e2", "bg": "#f5f3ff",
                               "kpis": ["Payer Mix", "Denial Rate by Payer"]},
         "Dept Perf.":        {"color": "#f66d9b", "bg": "#fdf2f8",
                               "kpis": ["Dept Performance"]},
+        "Provider Perf.":    {"color": "#6366f1", "bg": "#eef2ff",
+                              "kpis": ["Provider Scorecard"]},
+        "Procedure Perf.":   {"color": "#0891b2", "bg": "#ecfeff",
+                              "kpis": ["CPT Code Analysis"]},
+        "Operational":       {"color": "#78716c", "bg": "#fafaf9",
+                              "kpis": ["Data Freshness"]},
     }
 
     dot = graphviz.Digraph("semantic", format="svg")
@@ -922,14 +989,14 @@ Sidebar Selections
                                  [AND e.encounter_type = ?]    -- when enc-type filter active
                            )
         │
-        ▼  (CTE reused by all 17 query_* functions)
+        ▼  (CTE reused by all 26 query_* functions)
   silver_payments    (JOIN filtered_claims ON claim_id)
   silver_denials     (JOIN filtered_claims ON claim_id)
   silver_adjustments (JOIN filtered_claims ON claim_id)
   silver_encounters  (JOIN filtered_claims ON encounter_id)
   silver_charges     (via silver_encounters ON encounter_id)
 
-All 23 query_* functions use this CTE — filters applied at the database level, not in memory.
+All 26 query_* functions use this CTE — filters applied at the database level, not in memory.
 ```
 """)
 
@@ -973,7 +1040,7 @@ Every AI response follows a **three-stage pipeline**:
                bgcolor="#eff6ff", penwidth="2")
         c.node("cube_api", "Cube Semantic Layer\n(measures, dimensions, joins)",
                shape="box3d", fillcolor="#fef3c7", color="#e8a838")
-        c.node("neo4j_db", "Neo4j Knowledge Graph\n(10 entities, 9 FKs)",
+        c.node("neo4j_db", "Neo4j Knowledge Graph\n(10 entities, 11 FKs)",
                shape="cylinder", fillcolor="#dcfce7", color="#38c172")
         c.node("meta_kpi", "meta_kpi_catalog\n(23 KPI definitions)",
                shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
@@ -1049,7 +1116,7 @@ Every AI response follows a **three-stage pipeline**:
 | Source | Content passed to LLM | Fallback |
 |--------|----------------------|----------|
 | **Cube** semantic layer | Measures, dimensions, joins, business rules | DuckDB `meta_semantic_layer` |
-| **Neo4j** knowledge graph | 10 entities, 9 FK relationships, schema descriptions | DuckDB `meta_kg_nodes` / `meta_kg_edges` |
+| **Neo4j** knowledge graph | 10 entities, 11 FK relationships, schema descriptions | DuckDB `meta_kg_nodes` / `meta_kg_edges` |
 | DuckDB `meta_kpi_catalog` | 23 KPI names, formulas, categories, benchmarks | Static Python fallback |
 
 The **live KPI snapshot** appends current metric values and active sidebar
