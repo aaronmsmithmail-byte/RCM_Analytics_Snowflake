@@ -102,7 +102,7 @@ Pass criteria: Zero violations. Run `ruff check --fix` for auto-fixable issues.
 3. If `requirements.txt` changed, README Dependencies table is updated
 4. If new `os.environ.get()` calls added, they're in `.env.example`
 5. If new tables/entities added: `_TABLE_CATALOG`, `_KG_NODES`, and lineage diagram in `metadata_pages.py` are updated
-6. If new KPIs/tabs added: Business Processes page reference table and Data Catalog are consistent
+6. If new KPIs/tabs added: Business Process page reference table and Data Catalog are consistent
 
 ### Gate 5: Standards Compliance
 

@@ -10,7 +10,7 @@ This module contains six supplemental pages accessible from the sidebar:
   - AI Architecture     : Process diagram — how the AI chat tab uses the
                           semantic layer, knowledge graph, and SQL tool loop
                           to answer natural-language RCM questions
-  - Business Processes  : Revenue cycle process map with decision points
+  - Business Process  : Revenue cycle process map with decision points
                           and live KPI annotations at each step
 
 Each render_*() function is called from app.py based on st.session_state["active_page"].
@@ -1435,7 +1435,7 @@ _PROCESS_STEPS = [
 
 def render_business_processes():
     """Revenue Cycle business process map with live KPI annotations."""
-    st.title("Business Processes")
+    st.title("Business Process")
     st.caption(
         "Revenue cycle management process map \u2014 each step shows live "
         "performance metrics and links to the dashboard tabs that measure it"

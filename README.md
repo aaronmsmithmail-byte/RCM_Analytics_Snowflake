@@ -17,11 +17,11 @@ This dashboard provides healthcare organizations with interactive visualizations
 | **Provider Performance** | Provider scorecard with collection rate, denial rate, and clean claim rate outlier detection |
 | **CPT Code Analysis** | Revenue, denial rate, and charge concentration by procedure code |
 | **Underpayment Analysis** | ERA allowed vs. paid variance — contractual recovery opportunity by payer |
-| **📈 Forecasting** | Linear trend projections for cash flow, DAR, and denial rate + interactive what-if scenario modelling |
+| **Forecasting** | Linear trend projections for cash flow, DAR, and denial rate + interactive what-if scenario modelling |
 | **Patient Responsibility** | Patient-owed portion (co-pay/deductible/coinsurance) by payer, department, and encounter type |
 | **AI Assistant** | Natural-language chat interface — asks questions, queries the database live via tool calling, and explains results in plain language |
 
-**Metadata pages** (sidebar navigation): Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer · AI Architecture · Business Processes
+**Metadata pages** (sidebar navigation): Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer · AI Architecture · Business Process
 
 Every data tab includes **CSV and Excel export buttons**. A **KPI alert system** in the sidebar flags threshold breaches in real time, and a **data pipeline freshness panel** shows the last ETL run time and status for each of the 10 data domains.
 
@@ -207,7 +207,7 @@ RCM_Analytics_test/
 │   ├── database.py          # Medallion schema, ETL, build_filter_cte(), schema migration
 │   ├── data_loader.py       # Sidebar widget population helpers
 │   ├── metadata_pages.py    # Data Catalog, Data Lineage, Knowledge Graph, Semantic Layer,
-│   │                        #   AI Architecture, Business Processes (6 metadata pages)
+│   │                        #   AI Architecture, Business Process (6 metadata pages)
 │   ├── metrics.py           # SQL-based KPI engine (23 query_* functions + FilterParams)
 │   ├── ai_chat.py           # AI Assistant backend: TOOL_SCHEMA, execute_sql_tool(),
 │   │                        #   run_agentic_turn(), build_system_prompt()
@@ -328,7 +328,7 @@ Revenue and denial patterns by procedure code. Top CPT codes by revenue (colored
 ### Tab 9 — Underpayment Analysis
 Compares ERA `allowed_amount` (contracted rate) vs. `payment_amount` (actual remittance). Identifies systematic payer underpayments — a direct contractual recovery opportunity. Summary KPIs: total recovery opportunity, underpayment rate, underpaid claim count, avg shortfall per claim. Charts: recovery opportunity by payer, underpayment rate by payer, monthly trend, allowed/paid/underpaid stacked waterfall. Payer summary table with export.
 
-### Tab 10 — 📈 Forecasting
+### Tab 10 — Forecasting
 **Trend projections:** Linear extrapolation (degree-1 polynomial) with ±1 std-dev confidence band projected 3 months forward for cash flow (monthly collections), Days in A/R, and denial rate. Each projection includes a pass/fail callout against its benchmark.
 
 **Anomaly detection:** IQR-based outlier detection automatically identifies and excludes anomalous months (e.g., incomplete data, processing errors) from the forecast model. Anomalies are flagged with red ✕ markers on the chart and listed in a warning callout.
@@ -368,7 +368,7 @@ A conversational interface backed by an **agentic tool-calling loop**:
 - **Knowledge Graph** — Entity-relationship diagram of the Silver-layer data model
 - **Semantic Layer** — Business concept → KPI → source table/column mapping for every metric
 - **AI Architecture** — Interactive process flow diagram showing how the AI chat tab assembles context from the semantic layer and knowledge graph, routes through the LLM, and executes live SQL queries to answer questions
-- **Business Processes** — Revenue cycle process map with decision points (clean claim?, payer decision?, appeal?) and live KPI annotations at each step, linking business processes to the dashboard tabs that measure them
+- **Business Process** — Revenue cycle process map with decision points (clean claim?, payer decision?, appeal?) and live KPI annotations at each step, linking business processes to the dashboard tabs that measure them
 
 ---
 
