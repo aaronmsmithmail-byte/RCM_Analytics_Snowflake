@@ -288,3 +288,145 @@ class TestForecastModelStats:
         vals5 = tuple(range(100, 600, 100))
         result5 = _forecast_model_stats((tuple(f"2024-{m:02d}" for m in range(1, 6)), vals5))
         assert result5 is None
+
+
+# ===========================================================================
+# _detect_anomalies — reimplemented from app.py
+# ===========================================================================
+
+def _detect_anomalies(series: pd.Series) -> dict:
+    """Identical to app._detect_anomalies."""
+    clean = series.dropna()
+    if len(clean) < 4:
+        return {
+            "mask": pd.Series(False, index=series.index),
+            "lower_bound": None,
+            "upper_bound": None,
+            "anomalies": [],
+            "count": 0,
+        }
+    q1 = float(np.percentile(clean.values, 25))
+    q3 = float(np.percentile(clean.values, 75))
+    iqr = q3 - q1
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+    mask = (series < lower) | (series > upper)
+    mask = mask.fillna(False)
+    anomalies = [(idx, float(series[idx])) for idx in series.index if mask.get(idx, False)]
+    return {
+        "mask": mask,
+        "lower_bound": lower,
+        "upper_bound": upper,
+        "anomalies": anomalies,
+        "count": int(mask.sum()),
+    }
+
+
+class TestDetectAnomalies:
+    def test_no_anomalies_in_stable_data(self):
+        series = pd.Series(
+            [10, 11, 12, 10, 11, 12, 10, 11],
+            index=[f"2024-{m:02d}" for m in range(1, 9)],
+        )
+        result = _detect_anomalies(series)
+        assert result["count"] == 0
+        assert result["anomalies"] == []
+
+    def test_detects_obvious_outlier(self):
+        values = [10, 11, 12, 10, 11, 12, 10, 0]  # 0 is far below
+        series = pd.Series(values, index=[f"2024-{m:02d}" for m in range(1, 9)])
+        result = _detect_anomalies(series)
+        assert result["count"] >= 1
+        anom_labels = [a[0] for a in result["anomalies"]]
+        assert "2024-08" in anom_labels
+
+    def test_returns_correct_bounds(self):
+        series = pd.Series([10, 20, 30, 40], index=["a", "b", "c", "d"])
+        result = _detect_anomalies(series)
+        # np.percentile: Q1=17.5, Q3=32.5, IQR=15 → lower=-5, upper=55
+        assert result["lower_bound"] == pytest.approx(-5.0, abs=0.1)
+        assert result["upper_bound"] == pytest.approx(55.0, abs=0.1)
+
+    def test_handles_short_series(self):
+        series = pd.Series([10, 20], index=["a", "b"])
+        result = _detect_anomalies(series)
+        assert result["count"] == 0
+        assert result["lower_bound"] is None
+
+    def test_anomaly_mask_matches_series_index(self):
+        idx = [f"2024-{m:02d}" for m in range(1, 7)]
+        series = pd.Series([10, 11, 12, 10, 11, 100], index=idx)
+        result = _detect_anomalies(series)
+        assert list(result["mask"].index) == idx
+
+
+# ===========================================================================
+# _detect_seasonality — reimplemented from app.py
+# ===========================================================================
+
+def _detect_seasonality(series: pd.Series) -> dict:
+    """Identical to app._detect_seasonality."""
+    clean = series.dropna()
+    if len(clean) < 12:
+        return {"strength": 0.0, "level": "none", "monthly_pattern": {}}
+    try:
+        months = [int(str(idx).split("-")[1]) for idx in clean.index]
+    except (IndexError, ValueError):
+        return {"strength": 0.0, "level": "none", "monthly_pattern": {}}
+    values = clean.values.astype(float)
+    total_var = float(np.var(values))
+    if total_var == 0:
+        return {"strength": 0.0, "level": "none", "monthly_pattern": {}}
+    monthly_sums: dict[int, list[float]] = {}
+    for m, v in zip(months, values):
+        monthly_sums.setdefault(m, []).append(v)
+    monthly_pattern = {m: float(np.mean(vals)) for m, vals in sorted(monthly_sums.items())}
+    group_means = np.array(list(monthly_pattern.values()))
+    between_var = float(np.var(group_means))
+    strength = min(between_var / total_var, 1.0)
+    if strength >= 0.5:
+        level = "strong"
+    elif strength >= 0.3:
+        level = "moderate"
+    else:
+        level = "none"
+    return {"strength": strength, "level": level, "monthly_pattern": monthly_pattern}
+
+
+class TestDetectSeasonality:
+    def test_no_seasonality_in_flat_data(self):
+        idx = [f"2024-{m:02d}" for m in range(1, 13)]
+        series = pd.Series([10.0] * 12, index=idx)
+        result = _detect_seasonality(series)
+        assert result["strength"] == 0.0
+        assert result["level"] == "none"
+
+    def test_detects_strong_seasonal_pattern(self):
+        # Create a pattern where Jan-Jun are high, Jul-Dec are low (2 years)
+        idx = [f"{y}-{m:02d}" for y in (2024, 2025) for m in range(1, 13)]
+        vals = [100 if m <= 6 else 50 for m in range(1, 13)] * 2
+        series = pd.Series(vals, index=idx)
+        result = _detect_seasonality(series)
+        assert result["strength"] > 0.3
+        assert result["level"] in ("moderate", "strong")
+
+    def test_strength_between_zero_and_one(self):
+        idx = [f"{y}-{m:02d}" for y in (2024, 2025) for m in range(1, 13)]
+        vals = [float(10 + m * 2 + (m % 3) * 5) for m in range(1, 13)] * 2
+        series = pd.Series(vals, index=idx)
+        result = _detect_seasonality(series)
+        assert 0.0 <= result["strength"] <= 1.0
+
+    def test_returns_monthly_pattern_dict(self):
+        idx = [f"{y}-{m:02d}" for y in (2024, 2025) for m in range(1, 13)]
+        vals = list(range(1, 25))
+        series = pd.Series(vals, index=idx)
+        result = _detect_seasonality(series)
+        assert len(result["monthly_pattern"]) == 12
+        assert all(m in result["monthly_pattern"] for m in range(1, 13))
+
+    def test_handles_short_series(self):
+        series = pd.Series([10, 20, 30], index=["2024-01", "2024-02", "2024-03"])
+        result = _detect_seasonality(series)
+        assert result["level"] == "none"
+        assert result["monthly_pattern"] == {}

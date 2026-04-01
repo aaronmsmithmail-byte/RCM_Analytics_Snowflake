@@ -359,12 +359,112 @@ def export_buttons(label: str, sheets: dict[str, pd.DataFrame]):
 
 
 # ── Forecast Helper ──────────────────────────────────────────────────
-def _linear_forecast(series: pd.Series, periods_ahead: int = 3):
+def _detect_anomalies(series: pd.Series) -> dict:
+    """Detect outliers in a time series using the IQR method.
+
+    Points outside [Q1 - 1.5*IQR, Q3 + 1.5*IQR] are flagged as anomalies.
+    IQR is preferred over Z-score because it is robust to the very outliers
+    we are trying to detect (it does not use mean/std which outliers skew).
+
+    Args:
+        series: Pandas Series of numeric values.
+
+    Returns:
+        dict with keys:
+        - mask: pd.Series[bool] — True for anomalous points
+        - lower_bound: float
+        - upper_bound: float
+        - anomalies: list of (index_label, value) tuples
+        - count: int
+    """
+    clean = series.dropna()
+    if len(clean) < 4:
+        return {
+            "mask": pd.Series(False, index=series.index),
+            "lower_bound": None,
+            "upper_bound": None,
+            "anomalies": [],
+            "count": 0,
+        }
+    q1 = float(np.percentile(clean.values, 25))
+    q3 = float(np.percentile(clean.values, 75))
+    iqr = q3 - q1
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+    mask = (series < lower) | (series > upper)
+    # NaN positions are not anomalies
+    mask = mask.fillna(False)
+    anomalies = [(idx, float(series[idx])) for idx in series.index if mask.get(idx, False)]
+    return {
+        "mask": mask,
+        "lower_bound": lower,
+        "upper_bound": upper,
+        "anomalies": anomalies,
+        "count": int(mask.sum()),
+    }
+
+
+def _detect_seasonality(series: pd.Series) -> dict:
+    """Detect seasonal patterns by comparing month-of-year variance to total variance.
+
+    Groups values by calendar month (1-12), computes group means, and measures
+    the ratio of between-group variance to total variance as a "seasonal strength"
+    score from 0 to 1.
+
+    Args:
+        series: Pandas Series indexed by "YYYY-MM" period labels.
+
+    Returns:
+        dict with keys:
+        - strength: float (0-1)
+        - level: str ("none", "moderate", "strong")
+        - monthly_pattern: dict of {month_number: avg_value}
+    """
+    clean = series.dropna()
+    if len(clean) < 12:
+        return {"strength": 0.0, "level": "none", "monthly_pattern": {}}
+
+    # Extract month number from YYYY-MM index
+    try:
+        months = [int(str(idx).split("-")[1]) for idx in clean.index]
+    except (IndexError, ValueError):
+        return {"strength": 0.0, "level": "none", "monthly_pattern": {}}
+
+    values = clean.values.astype(float)
+    total_var = float(np.var(values))
+    if total_var == 0:
+        return {"strength": 0.0, "level": "none", "monthly_pattern": {}}
+
+    # Compute monthly averages
+    monthly_sums: dict[int, list[float]] = {}
+    for m, v in zip(months, values):
+        monthly_sums.setdefault(m, []).append(v)
+    monthly_pattern = {m: float(np.mean(vals)) for m, vals in sorted(monthly_sums.items())}
+
+    # Between-group variance: variance of group means
+    group_means = np.array(list(monthly_pattern.values()))
+    between_var = float(np.var(group_means))
+    strength = min(between_var / total_var, 1.0)
+
+    if strength >= 0.5:
+        level = "strong"
+    elif strength >= 0.3:
+        level = "moderate"
+    else:
+        level = "none"
+
+    return {"strength": strength, "level": level, "monthly_pattern": monthly_pattern}
+
+
+def _linear_forecast(series: pd.Series, periods_ahead: int = 3, exclude_mask=None):
     """Fit a linear trend on a time series and project N periods forward.
 
     Args:
         series:         Pandas Series of numeric values (index = period labels).
         periods_ahead:  Number of future periods to project.
+        exclude_mask:   Optional boolean Series (True = exclude from fitting).
+                        Excluded points are treated like NaN during model fitting
+                        but the fitted array still covers all positions.
 
     Returns:
         tuple: (fitted, forecast, resid_std, future_labels) or
@@ -375,12 +475,15 @@ def _linear_forecast(series: pd.Series, periods_ahead: int = 3):
             future_labels: List of period label strings inferred by incrementing
                            the last label by one month at a time.
     """
-    clean = series.dropna()
-    if len(clean) < 4:
-        return None, None, None, None
     x = np.arange(len(series), dtype=float)
     y = series.values.astype(float)
     mask = ~np.isnan(y)
+    if exclude_mask is not None:
+        exclude_arr = np.array(exclude_mask, dtype=bool)
+        if len(exclude_arr) == len(mask):
+            mask = mask & ~exclude_arr
+    if mask.sum() < 4:
+        return None, None, None, None
     coeffs = np.polyfit(x[mask], y[mask], 1)
     fitted = np.polyval(coeffs, x)
     x_future = np.arange(len(series), len(series) + periods_ahead, dtype=float)
@@ -396,24 +499,29 @@ def _linear_forecast(series: pd.Series, periods_ahead: int = 3):
 
 
 @st.cache_data(ttl=3600)
-def _forecast_model_stats(values: tuple, test_frac: float = 0.25):
+def _forecast_model_stats(values: tuple, test_frac: float = 0.25, exclude_indices: tuple = ()):
     """Compute train/test accuracy metrics for a linear regression forecast.
 
     Splits the series into train (first ~75%) and test (last ~25%), fits a
     degree-1 polynomial on the training set, and evaluates on both.
 
     Args:
-        values:     Tuple of (index_labels, numeric_values) — avoids passing
-                    unhashable Series to a cached function.
-        test_frac:  Fraction of data held out for testing.
+        values:          Tuple of (index_labels, numeric_values) — avoids passing
+                         unhashable Series to a cached function.
+        test_frac:       Fraction of data held out for testing.
+        exclude_indices: Tuple of positional indices to exclude (anomalies).
 
     Returns:
         dict with model name, split sizes, R², MAE, and MAPE for train/test,
         or None if insufficient data for a meaningful split.
     """
     y_raw = np.array(values[1], dtype=float)
-    mask = ~np.isnan(y_raw)
-    y = y_raw[mask]
+    keep_mask = ~np.isnan(y_raw)
+    if exclude_indices:
+        for i in exclude_indices:
+            if 0 <= i < len(keep_mask):
+                keep_mask[i] = False
+    y = y_raw[keep_mask]
     x = np.arange(len(y), dtype=float)
 
     if len(y) < 6:
@@ -469,9 +577,18 @@ def _forecast_model_stats(values: tuple, test_frac: float = 0.25):
     }
 
 
-def _render_model_stats(series: pd.Series, metric_label: str):
+def _render_model_stats(series: pd.Series, metric_label: str, anomaly_info=None, seasonality_info=None):
     """Display model performance metrics in an expander below a forecast chart."""
-    stats = _forecast_model_stats((tuple(series.index), tuple(series.values)))
+    # Build exclude_indices from anomaly mask
+    exclude_idx = ()
+    if anomaly_info and anomaly_info["count"] > 0:
+        exclude_idx = tuple(
+            i for i, val in enumerate(anomaly_info["mask"]) if val
+        )
+    stats = _forecast_model_stats(
+        (tuple(series.index), tuple(series.values)),
+        exclude_indices=exclude_idx,
+    )
     if stats is None:
         return
     with st.expander(f"Model Details — {metric_label}"):
@@ -489,6 +606,18 @@ def _render_model_stats(series: pd.Series, metric_label: str):
             mc1, mc2, _, _, _ = st.columns(5)
             mc1.metric("Train MAPE", f"{stats['mape_train']:.1f}%")
             mc2.metric("Test MAPE", f"{stats['mape_test']:.1f}%")
+
+        # Anomaly and seasonality info
+        ac1, ac2 = st.columns(2)
+        if anomaly_info:
+            ac1.metric("Anomalies Excluded", f"{anomaly_info['count']} month(s)")
+        else:
+            ac1.metric("Anomalies Excluded", "None detected")
+        if seasonality_info:
+            ac2.metric(
+                "Seasonal Strength",
+                f"{seasonality_info['strength']:.2f} ({seasonality_info['level']})",
+            )
 
         # Interpret R² for the user
         r2 = stats["r2_test"]
@@ -2004,7 +2133,7 @@ with tab9:
 # =====================================================================
 with tab10:
     st.header("Forecasting & Scenario Planning")
-    st.caption("Linear trend projections on monthly actuals + interactive what-if analysis.")
+    st.caption("Linear trend projections with anomaly detection and seasonality analysis + interactive what-if scenarios.")
 
     FORECAST_MONTHS = 3  # periods to project forward
 
@@ -2013,7 +2142,11 @@ with tab10:
 
     if not dar_trend.empty and "payments" in dar_trend.columns:
         cf_series = dar_trend["payments"].dropna()
-        cf_fitted, cf_forecast, cf_std, cf_future = _linear_forecast(cf_series, FORECAST_MONTHS)
+        cf_anomalies = _detect_anomalies(cf_series)
+        cf_seasonality = _detect_seasonality(cf_series)
+        cf_fitted, cf_forecast, cf_std, cf_future = _linear_forecast(
+            cf_series, FORECAST_MONTHS, exclude_mask=cf_anomalies["mask"],
+        )
 
         if cf_fitted is not None:
             all_periods  = list(cf_series.index) + cf_future
@@ -2045,6 +2178,15 @@ with tab10:
                 line=dict(color="rgba(0,0,0,0)"),
                 name="±1 Std Dev", showlegend=True,
             ))
+            # Anomaly markers
+            if cf_anomalies["count"] > 0:
+                anom_idx = [a[0] for a in cf_anomalies["anomalies"]]
+                anom_val = [a[1] for a in cf_anomalies["anomalies"]]
+                fig.add_trace(go.Scatter(
+                    x=anom_idx, y=anom_val,
+                    name="Anomaly (excluded)", mode="markers",
+                    marker=dict(size=14, symbol="x", color="red", line=dict(width=2)),
+                ))
             fig.update_layout(
                 height=380, margin=dict(t=40, b=30),
                 yaxis_title="Monthly Collections ($)", xaxis_title="Month",
@@ -2052,13 +2194,17 @@ with tab10:
             )
             st.plotly_chart(fig, theme="streamlit", width="stretch")
 
+            if cf_anomalies["count"] > 0:
+                anom_list = ", ".join(f"{a[0]} (${a[1]:,.0f})" for a in cf_anomalies["anomalies"])
+                st.warning(f"**{cf_anomalies['count']} anomalous month(s) excluded from forecast:** {anom_list}")
+
             fcast_total = cf_forecast.sum()
             trend_dir   = "↑ upward" if cf_forecast[-1] > cf_series.iloc[-1] else "↓ downward"
             st.info(
                 f"**Projection:** Estimated **${fcast_total:,.0f}** in collections over the next "
                 f"{FORECAST_MONTHS} months. Trend is **{trend_dir}**."
             )
-            _render_model_stats(cf_series, "Cash Flow")
+            _render_model_stats(cf_series, "Cash Flow", cf_anomalies, cf_seasonality)
         else:
             st.info("Insufficient monthly data for cash flow projection (need ≥ 4 periods).")
     else:
@@ -2073,7 +2219,11 @@ with tab10:
         st.subheader("Days in A/R Forecast")
         if not dar_trend.empty and "days_in_ar" in dar_trend.columns:
             dar_series = dar_trend["days_in_ar"].dropna()
-            dar_fitted, dar_forecast_vals, dar_std, dar_future = _linear_forecast(dar_series, FORECAST_MONTHS)
+            dar_anomalies = _detect_anomalies(dar_series)
+            dar_seasonality = _detect_seasonality(dar_series)
+            dar_fitted, dar_forecast_vals, dar_std, dar_future = _linear_forecast(
+                dar_series, FORECAST_MONTHS, exclude_mask=dar_anomalies["mask"],
+            )
             if dar_fitted is not None:
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(
@@ -2094,17 +2244,29 @@ with tab10:
                     fill="toself", fillcolor="rgba(239,68,68,0.1)",
                     line=dict(color="rgba(0,0,0,0)"), name="±1 Std Dev",
                 ))
+                # Anomaly markers
+                if dar_anomalies["count"] > 0:
+                    anom_idx = [a[0] for a in dar_anomalies["anomalies"]]
+                    anom_val = [a[1] for a in dar_anomalies["anomalies"]]
+                    fig.add_trace(go.Scatter(
+                        x=anom_idx, y=anom_val,
+                        name="Anomaly (excluded)", mode="markers",
+                        marker=dict(size=14, symbol="x", color="red", line=dict(width=2)),
+                    ))
                 fig.add_hline(y=35, line_dash="dash", line_color="green",
                               annotation_text="35-day benchmark")
                 fig.update_layout(height=340, margin=dict(t=40, b=10),
                                   yaxis_title="Days in A/R", xaxis_title="Month")
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
+                if dar_anomalies["count"] > 0:
+                    anom_list = ", ".join(f"{a[0]} ({a[1]:.1f} days)" for a in dar_anomalies["anomalies"])
+                    st.warning(f"**{dar_anomalies['count']} anomalous month(s) excluded:** {anom_list}")
                 proj_dar = float(dar_forecast_vals[-1])
                 if proj_dar > 35:
                     st.warning(f"Projected DAR in {dar_future[-1]}: **{proj_dar:.1f} days** — above the 35-day benchmark.")
                 else:
                     st.success(f"Projected DAR in {dar_future[-1]}: **{proj_dar:.1f} days** — within benchmark.")
-                _render_model_stats(dar_series, "Days in A/R")
+                _render_model_stats(dar_series, "Days in A/R", dar_anomalies, dar_seasonality)
             else:
                 st.info("Insufficient data for DAR projection.")
         else:
@@ -2114,7 +2276,11 @@ with tab10:
         st.subheader("Denial Rate Forecast")
         if not denial_trend.empty and "denial_rate" in denial_trend.columns:
             dr_series = denial_trend["denial_rate"].dropna()
-            dr_fitted, dr_forecast_vals, dr_std, dr_future = _linear_forecast(dr_series, FORECAST_MONTHS)
+            dr_anomalies = _detect_anomalies(dr_series)
+            dr_seasonality = _detect_seasonality(dr_series)
+            dr_fitted, dr_forecast_vals, dr_std, dr_future = _linear_forecast(
+                dr_series, FORECAST_MONTHS, exclude_mask=dr_anomalies["mask"],
+            )
             if dr_fitted is not None:
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(
@@ -2134,17 +2300,29 @@ with tab10:
                     fill="toself", fillcolor="rgba(239,68,68,0.1)",
                     line=dict(color="rgba(0,0,0,0)"), name="±1 Std Dev",
                 ))
+                # Anomaly markers
+                if dr_anomalies["count"] > 0:
+                    anom_idx = [a[0] for a in dr_anomalies["anomalies"]]
+                    anom_val = [a[1] for a in dr_anomalies["anomalies"]]
+                    fig.add_trace(go.Scatter(
+                        x=anom_idx, y=anom_val,
+                        name="Anomaly (excluded)", mode="markers",
+                        marker=dict(size=14, symbol="x", color="red", line=dict(width=2)),
+                    ))
                 fig.add_hline(y=10, line_dash="dash", line_color="green",
                               annotation_text="10% benchmark")
                 fig.update_layout(height=340, margin=dict(t=40, b=10),
                                   yaxis_title="Denial Rate (%)", xaxis_title="Month")
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
+                if dr_anomalies["count"] > 0:
+                    anom_list = ", ".join(f"{a[0]} ({a[1]:.1f}%)" for a in dr_anomalies["anomalies"])
+                    st.warning(f"**{dr_anomalies['count']} anomalous month(s) excluded:** {anom_list}")
                 proj_dr = float(dr_forecast_vals[-1])
                 if proj_dr > 10:
                     st.warning(f"Projected denial rate in {dr_future[-1]}: **{proj_dr:.1f}%** — above 10% benchmark.")
                 else:
                     st.success(f"Projected denial rate in {dr_future[-1]}: **{proj_dr:.1f}%** — within benchmark.")
-                _render_model_stats(dr_series, "Denial Rate")
+                _render_model_stats(dr_series, "Denial Rate", dr_anomalies, dr_seasonality)
             else:
                 st.info("Insufficient data for denial rate projection.")
         else:

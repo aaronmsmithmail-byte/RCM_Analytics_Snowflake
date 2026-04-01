@@ -1426,8 +1426,8 @@ _PROCESS_STEPS = [
     },
     {
         "Step": "10. Reporting & Analytics",
-        "Description": "KPI monitoring, trend analysis, forecasting, and operational optimization",
-        "Key Metrics": "All KPIs, Forecast Projections",
+        "Description": "KPI monitoring, trend analysis, forecasting with anomaly detection and seasonality analysis",
+        "Key Metrics": "All KPIs, Forecast Projections, Anomaly Flags",
         "Dashboard Tab(s)": "Executive Summary, Forecasting",
     },
 ]
