@@ -867,7 +867,7 @@ if st.sidebar.button("Review/Edit Backlog", width="stretch"):
 # every page, including metadata pages that call st.stop() early.
 st.sidebar.divider()
 st.sidebar.markdown("### Metadata")
-if st.sidebar.button("Business Processes", width="stretch"):
+if st.sidebar.button("Business Process", width="stretch"):
     st.session_state["active_page"] = "business_processes"
 if st.sidebar.button("Data Catalog", width="stretch"):
     st.session_state["active_page"] = "data_catalog"
@@ -944,9 +944,9 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.t
     "Provider Performance",
     "CPT Code Analysis",
     "Underpayment Analysis",
-    "📈 Forecasting",
+    "Forecasting",
     "Patient Responsibility",
-    "🤖 AI Assistant",
+    "AI Assistant",
 ])
 
 # =====================================================================
