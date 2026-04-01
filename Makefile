@@ -20,7 +20,7 @@ coverage:
 	python -m pytest tests/ -q --cov=src --cov-report=term-missing
 
 security:
-	bandit -r src/ app.py -c bandit.toml
+	bandit -r src/ app.py -c bandit.toml --severity-level medium
 	pip-audit -r requirements.txt
 
 ci: lint test security

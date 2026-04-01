@@ -19,6 +19,7 @@ import time
 
 try:
     from neo4j import GraphDatabase
+
     _HAS_NEO4J = True
 except ImportError:
     _HAS_NEO4J = False

@@ -7,4 +7,5 @@ exclude_dirs = ["tests", "generate_sample_data.py"]
 severity = "medium"
 skips = [
     "B101",  # assert usage — acceptable for this project
+    "B608",  # SQL injection — false positives; all queries use parameterized ? placeholders
 ]

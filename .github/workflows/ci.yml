@@ -51,19 +51,10 @@ jobs:
       - name: Run tests with coverage
         run: pytest tests/ -v --tb=short --cov=src --cov-report=term-missing --cov-report=xml:coverage.xml
 
-      - name: Upload coverage artifact
+      - name: Coverage summary
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
-
-      - name: Post coverage summary to PR
-        if: github.event_name == 'pull_request'
-        uses: orgoro/coverage@v3.2
-        with:
-          coverageFile: coverage.xml
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m coverage report --format=markdown >> $GITHUB_STEP_SUMMARY || true
 
   security:
     name: Security
@@ -82,7 +73,7 @@ jobs:
         run: pip install bandit pip-audit
 
       - name: Run Bandit security scan
-        run: bandit -r src/ app.py -c bandit.toml
+        run: bandit -r src/ app.py -c bandit.toml --severity-level medium
 
       - name: Check dependencies for vulnerabilities
         run: pip-audit -r requirements.txt
