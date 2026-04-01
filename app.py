@@ -395,6 +395,111 @@ def _linear_forecast(series: pd.Series, periods_ahead: int = 3):
     return fitted, forecast, resid_std, future_labels
 
 
+@st.cache_data(ttl=3600)
+def _forecast_model_stats(values: tuple, test_frac: float = 0.25):
+    """Compute train/test accuracy metrics for a linear regression forecast.
+
+    Splits the series into train (first ~75%) and test (last ~25%), fits a
+    degree-1 polynomial on the training set, and evaluates on both.
+
+    Args:
+        values:     Tuple of (index_labels, numeric_values) — avoids passing
+                    unhashable Series to a cached function.
+        test_frac:  Fraction of data held out for testing.
+
+    Returns:
+        dict with model name, split sizes, R², MAE, and MAPE for train/test,
+        or None if insufficient data for a meaningful split.
+    """
+    y_raw = np.array(values[1], dtype=float)
+    mask = ~np.isnan(y_raw)
+    y = y_raw[mask]
+    x = np.arange(len(y), dtype=float)
+
+    if len(y) < 6:
+        return None
+
+    split = max(int(len(y) * (1 - test_frac)), 4)
+    if len(y) - split < 2:
+        return None
+
+    x_train, x_test = x[:split], x[split:]
+    y_train, y_test = y[:split], y[split:]
+
+    coeffs = np.polyfit(x_train, y_train, 1)
+    y_train_pred = np.polyval(coeffs, x_train)
+    y_test_pred = np.polyval(coeffs, x_test)
+
+    # R²
+    ss_res_train = np.sum((y_train - y_train_pred) ** 2)
+    ss_tot_train = np.sum((y_train - y_train.mean()) ** 2)
+    r2_train = float(1 - ss_res_train / ss_tot_train) if ss_tot_train > 0 else 0.0
+
+    ss_res_test = np.sum((y_test - y_test_pred) ** 2)
+    ss_tot_test = np.sum((y_test - y_test.mean()) ** 2)
+    r2_test = float(1 - ss_res_test / ss_tot_test) if ss_tot_test > 0 else 0.0
+
+    # MAE
+    mae_train = float(np.mean(np.abs(y_train - y_train_pred)))
+    mae_test = float(np.mean(np.abs(y_test - y_test_pred)))
+
+    # MAPE (skip zeros to avoid division errors)
+    nz_train = y_train != 0
+    mape_train = (
+        float(np.mean(np.abs((y_train[nz_train] - y_train_pred[nz_train]) / y_train[nz_train]))) * 100
+        if nz_train.any() else None
+    )
+    nz_test = y_test != 0
+    mape_test = (
+        float(np.mean(np.abs((y_test[nz_test] - y_test_pred[nz_test]) / y_test[nz_test]))) * 100
+        if nz_test.any() else None
+    )
+
+    return {
+        "model": "Linear Regression (OLS)",
+        "description": "Ordinary Least Squares degree-1 polynomial (numpy.polyfit)",
+        "train_points": int(len(x_train)),
+        "test_points": int(len(x_test)),
+        "r2_train": r2_train,
+        "r2_test": r2_test,
+        "mae_train": mae_train,
+        "mae_test": mae_test,
+        "mape_train": mape_train,
+        "mape_test": mape_test,
+    }
+
+
+def _render_model_stats(series: pd.Series, metric_label: str):
+    """Display model performance metrics in an expander below a forecast chart."""
+    stats = _forecast_model_stats((tuple(series.index), tuple(series.values)))
+    if stats is None:
+        return
+    with st.expander(f"Model Details — {metric_label}"):
+        st.markdown(f"**Model:** {stats['model']}")
+        st.caption(stats["description"])
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Train / Test Split", f"{stats['train_points']} / {stats['test_points']} months")
+        c2.metric("Train R²", f"{stats['r2_train']:.3f}")
+        c3.metric("Test R²", f"{stats['r2_test']:.3f}")
+        c4.metric("Train MAE", f"{stats['mae_train']:,.1f}")
+        c5.metric("Test MAE", f"{stats['mae_test']:,.1f}")
+
+        if stats["mape_train"] is not None and stats["mape_test"] is not None:
+            mc1, mc2, _, _, _ = st.columns(5)
+            mc1.metric("Train MAPE", f"{stats['mape_train']:.1f}%")
+            mc2.metric("Test MAPE", f"{stats['mape_test']:.1f}%")
+
+        # Interpret R² for the user
+        r2 = stats["r2_test"]
+        if r2 >= 0.8:
+            st.success(f"Test R² = {r2:.3f} — strong fit. The linear trend explains most of the variation in the holdout period.")
+        elif r2 >= 0.5:
+            st.info(f"Test R² = {r2:.3f} — moderate fit. The linear trend captures the general direction but not all variation.")
+        else:
+            st.warning(f"Test R² = {r2:.3f} — weak fit. The data may have non-linear patterns, seasonality, or high volatility that a simple linear model cannot capture.")
+
+
 # ── Load Data ────────────────────────────────────────────────────────
 # @st.cache_data is a Streamlit decorator that caches the return value.
 # On the first run, it calls load_all_data() (which queries DuckDB).
@@ -1953,6 +2058,7 @@ with tab10:
                 f"**Projection:** Estimated **${fcast_total:,.0f}** in collections over the next "
                 f"{FORECAST_MONTHS} months. Trend is **{trend_dir}**."
             )
+            _render_model_stats(cf_series, "Cash Flow")
         else:
             st.info("Insufficient monthly data for cash flow projection (need ≥ 4 periods).")
     else:
@@ -1998,6 +2104,7 @@ with tab10:
                     st.warning(f"Projected DAR in {dar_future[-1]}: **{proj_dar:.1f} days** — above the 35-day benchmark.")
                 else:
                     st.success(f"Projected DAR in {dar_future[-1]}: **{proj_dar:.1f} days** — within benchmark.")
+                _render_model_stats(dar_series, "Days in A/R")
             else:
                 st.info("Insufficient data for DAR projection.")
         else:
@@ -2037,6 +2144,7 @@ with tab10:
                     st.warning(f"Projected denial rate in {dr_future[-1]}: **{proj_dr:.1f}%** — above 10% benchmark.")
                 else:
                     st.success(f"Projected denial rate in {dr_future[-1]}: **{proj_dr:.1f}%** — within benchmark.")
+                _render_model_stats(dr_series, "Denial Rate")
             else:
                 st.info("Insufficient data for denial rate projection.")
         else:

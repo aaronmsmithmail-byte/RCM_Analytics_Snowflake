@@ -1,4 +1,6 @@
-"""Unit tests for app.py utility functions (df_to_csv, dfs_to_excel, _linear_forecast).
+"""Unit tests for app.py utility functions.
+
+Covers df_to_csv, dfs_to_excel, _linear_forecast, and _forecast_model_stats.
 
 Since app.py executes Streamlit dashboard logic at module level, we cannot
 import from it directly. Instead, we extract and test the pure function
@@ -159,3 +161,130 @@ class TestLinearForecast:
         _, _, _, labels = _linear_forecast(series, periods_ahead=2)
         assert labels[0] == "2024-05"
         assert labels[1] == "2024-06"
+
+
+# ===========================================================================
+# _forecast_model_stats — reimplemented from app.py
+# ===========================================================================
+
+def _forecast_model_stats(values: tuple, test_frac: float = 0.25):
+    """Identical to app._forecast_model_stats (without st.cache_data)."""
+    y_raw = np.array(values[1], dtype=float)
+    mask = ~np.isnan(y_raw)
+    y = y_raw[mask]
+    x = np.arange(len(y), dtype=float)
+
+    if len(y) < 6:
+        return None
+
+    split = max(int(len(y) * (1 - test_frac)), 4)
+    if len(y) - split < 2:
+        return None
+
+    x_train, x_test = x[:split], x[split:]
+    y_train, y_test = y[:split], y[split:]
+
+    coeffs = np.polyfit(x_train, y_train, 1)
+    y_train_pred = np.polyval(coeffs, x_train)
+    y_test_pred = np.polyval(coeffs, x_test)
+
+    ss_res_train = np.sum((y_train - y_train_pred) ** 2)
+    ss_tot_train = np.sum((y_train - y_train.mean()) ** 2)
+    r2_train = float(1 - ss_res_train / ss_tot_train) if ss_tot_train > 0 else 0.0
+
+    ss_res_test = np.sum((y_test - y_test_pred) ** 2)
+    ss_tot_test = np.sum((y_test - y_test.mean()) ** 2)
+    r2_test = float(1 - ss_res_test / ss_tot_test) if ss_tot_test > 0 else 0.0
+
+    mae_train = float(np.mean(np.abs(y_train - y_train_pred)))
+    mae_test = float(np.mean(np.abs(y_test - y_test_pred)))
+
+    nz_train = y_train != 0
+    mape_train = (
+        float(np.mean(np.abs((y_train[nz_train] - y_train_pred[nz_train]) / y_train[nz_train]))) * 100
+        if nz_train.any() else None
+    )
+    nz_test = y_test != 0
+    mape_test = (
+        float(np.mean(np.abs((y_test[nz_test] - y_test_pred[nz_test]) / y_test[nz_test]))) * 100
+        if nz_test.any() else None
+    )
+
+    return {
+        "model": "Linear Regression (OLS)",
+        "description": "Ordinary Least Squares degree-1 polynomial (numpy.polyfit)",
+        "train_points": int(len(x_train)),
+        "test_points": int(len(x_test)),
+        "r2_train": r2_train,
+        "r2_test": r2_test,
+        "mae_train": mae_train,
+        "mae_test": mae_test,
+        "mape_train": mape_train,
+        "mape_test": mape_test,
+    }
+
+
+class TestForecastModelStats:
+    def test_returns_none_for_too_few_points(self):
+        values = (("2024-01", "2024-02", "2024-03"), (10, 20, 30))
+        assert _forecast_model_stats(values) is None
+
+    def test_returns_dict_with_required_keys(self):
+        idx = tuple(f"2024-{m:02d}" for m in range(1, 13))
+        vals = tuple(range(100, 1300, 100))
+        result = _forecast_model_stats((idx, vals))
+        assert result is not None
+        assert "model" in result
+        assert "r2_train" in result
+        assert "r2_test" in result
+        assert "mae_train" in result
+        assert "mae_test" in result
+        assert "train_points" in result
+        assert "test_points" in result
+
+    def test_perfect_linear_has_high_r2(self):
+        idx = tuple(f"2024-{m:02d}" for m in range(1, 13))
+        vals = tuple(range(100, 1300, 100))  # perfectly linear
+        result = _forecast_model_stats((idx, vals))
+        assert result["r2_train"] == pytest.approx(1.0, abs=0.01)
+        assert result["r2_test"] == pytest.approx(1.0, abs=0.01)
+
+    def test_train_test_split_sizes(self):
+        idx = tuple(f"2024-{m:02d}" for m in range(1, 13))
+        vals = tuple(range(100, 1300, 100))
+        result = _forecast_model_stats((idx, vals))
+        assert result["train_points"] + result["test_points"] == 12
+        assert result["test_points"] >= 2
+
+    def test_mae_non_negative(self):
+        idx = tuple(f"2024-{m:02d}" for m in range(1, 13))
+        vals = tuple(float(100 + i * 10 + (i % 3) * 5) for i in range(12))
+        result = _forecast_model_stats((idx, vals))
+        assert result["mae_train"] >= 0
+        assert result["mae_test"] >= 0
+
+    def test_handles_nan_values(self):
+        idx = tuple(f"2024-{m:02d}" for m in range(1, 13))
+        vals = (100, float("nan"), 300, 400, 500, 600, 700, 800, float("nan"), 1000, 1100, 1200)
+        result = _forecast_model_stats((idx, vals))
+        # 10 non-NaN points: enough for a split
+        assert result is not None
+        assert result["train_points"] + result["test_points"] == 10
+
+    def test_model_name_is_linear_regression(self):
+        idx = tuple(f"2024-{m:02d}" for m in range(1, 13))
+        vals = tuple(range(100, 1300, 100))
+        result = _forecast_model_stats((idx, vals))
+        assert result["model"] == "Linear Regression (OLS)"
+
+    def test_returns_none_when_test_set_too_small(self):
+        # 6 points, 75% train = 4.5 → 4, test = 2 → should work
+        idx = tuple(f"2024-{m:02d}" for m in range(1, 7))
+        vals = tuple(range(100, 700, 100))
+        result = _forecast_model_stats((idx, vals))
+        assert result is not None
+        # 5 points: split = 3, test = 2 → still fine
+        # But 5 points total is < 6 → None
+        vals5 = tuple(range(100, 600, 100))
+        result5 = _forecast_model_stats((tuple(f"2024-{m:02d}" for m in range(1, 6)), vals5))
+        assert result5 is None

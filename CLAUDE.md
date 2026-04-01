@@ -141,7 +141,7 @@ Update `README.md` whenever:
 
 ```bash
 pytest tests/ -q          # must pass with 0 failures before every commit
-pytest tests/ -q | tail -1  # shows the count — currently 334 passed
+pytest tests/ -q | tail -1  # shows the count — currently 352 passed
 ```
 
 - `tests/test_metrics.py` — 151 tests covering all `query_*` functions in `src/metrics.py`
@@ -151,7 +151,7 @@ pytest tests/ -q | tail -1  # shows the count — currently 334 passed
 - `tests/test_data_loader.py` — 19 tests covering `_parse_dates`, `_parse_booleans`, `_validate_columns`, `load_all_data`, `load_gold_data` in `src/data_loader.py`
 - `tests/test_ai_chat_prompt.py` — 15 tests covering `build_system_prompt()` and `_get_meta_context()` in `src/ai_chat.py`
 - `tests/test_database.py` — 15 tests covering `build_filter_cte()` in `src/database.py`
-- `tests/test_app_utils.py` — 13 tests covering `df_to_csv`, `dfs_to_excel`, `_linear_forecast` from `app.py`
+- `tests/test_app_utils.py` — 21 tests covering `df_to_csv`, `dfs_to_excel`, `_linear_forecast`, `_forecast_model_stats` from `app.py`
 - `tests/test_ai_chat_agentic.py` — 11 tests covering `run_agentic_turn()` tool-calling loop in `src/ai_chat.py`
 - `tests/test_ai_chat_config.py` — 10 tests covering `AI_MAX_ROWS` and `AI_MAX_ITERATIONS` env var parsing in `src/ai_chat.py`
 - `tests/test_cube_client.py` — 9 tests covering `is_cube_available()`, `query_cube()`, `build_cube_filters()` in `src/cube_client.py`
