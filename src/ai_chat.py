@@ -131,7 +131,11 @@ def execute_sql_tool(query: str, db_path=None) -> dict:
         {"error": "message"}
     """
     # Safety check — only allow read queries
-    stripped = query.strip().lstrip("(")
+    # Strip SQL comments (-- line comments and /* block comments */) before checking
+    import re
+    stripped = re.sub(r'--[^\n]*', '', query)        # remove line comments
+    stripped = re.sub(r'/\*.*?\*/', '', stripped, flags=re.DOTALL)  # remove block comments
+    stripped = stripped.strip().lstrip("(")
     if stripped[:6].upper() not in ("SELECT", "WITH  ", "WITH\n", "WITH\t"):
         first_word = stripped.split()[0].upper() if stripped.split() else ""
         if first_word not in ("SELECT", "WITH"):
@@ -383,6 +387,17 @@ time period, denial reason codes, etc.
 
 {meta}
 {kpi_snapshot}
+
+## DuckDB SQL syntax (IMPORTANT — this is NOT SQLite or PostgreSQL)
+- Date difference: date_diff('day', CAST(start AS DATE), CAST(end AS DATE))
+  — do NOT use JULIANDAY, DATEDIFF, or TIMESTAMPDIFF (they don't exist in DuckDB)
+- Date formatting: strftime(CAST(col AS DATE), '%Y-%m')
+- Date columns in Silver tables are stored as TEXT — always CAST to DATE before date arithmetic
+- Current date: CURRENT_DATE
+- String functions: UPPER(), LOWER(), TRIM(), CONTAINS(), STARTS_WITH()
+- Rounding: ROUND(value, decimals)
+- COALESCE(col, default) for NULL handling
+- NULLIF(col, '') to convert empty strings to NULL
 
 ## Tool usage guidelines
 - Prefer aggregation queries (GROUP BY, SUM, COUNT, AVG) over row-level queries.
