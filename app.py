@@ -618,6 +618,8 @@ if st.sidebar.button("Review/Edit Backlog", width="stretch"):
 # every page, including metadata pages that call st.stop() early.
 st.sidebar.divider()
 st.sidebar.markdown("### Metadata")
+if st.sidebar.button("Business Processes", width="stretch"):
+    st.session_state["active_page"] = "business_processes"
 if st.sidebar.button("Data Catalog", width="stretch"):
     st.session_state["active_page"] = "data_catalog"
 if st.sidebar.button("Data Lineage", width="stretch"):
@@ -628,8 +630,6 @@ if st.sidebar.button("Semantic Layer", width="stretch"):
     st.session_state["active_page"] = "semantic_layer"
 if st.sidebar.button("AI Architecture", width="stretch"):
     st.session_state["active_page"] = "ai_architecture"
-if st.sidebar.button("Business Processes", width="stretch"):
-    st.session_state["active_page"] = "business_processes"
 if st.sidebar.button("Data Validation", width="stretch"):
     st.session_state["active_page"] = "data_validation"
 
