@@ -16,9 +16,136 @@ This module contains six supplemental pages accessible from the sidebar:
 Each render_*() function is called from app.py based on st.session_state["active_page"].
 """
 
-import graphviz
 import pandas as pd
 import streamlit as st
+
+try:
+    import graphviz
+
+    _HAS_GRAPHVIZ = True
+except ImportError:
+    _HAS_GRAPHVIZ = False
+
+
+class _DotBuilder:
+    """Minimal graphviz.Digraph replacement that builds a DOT string.
+
+    Used when the graphviz Python package is unavailable (e.g. in SiS).
+    Supports node(), edge(), subgraph(), and attr() — enough to replicate
+    the diagrams in this module. The result is passed to st.graphviz_chart().
+    """
+
+    def __init__(self, name="G", **kwargs):
+        self._name = name
+        self._lines = []
+        self._graph_attrs = kwargs
+        self._default_node_attrs = {}
+        self._default_edge_attrs = {}
+
+    def attr(self, target=None, **kwargs):
+        if target == "node":
+            self._default_node_attrs.update(kwargs)
+        elif target == "edge":
+            self._default_edge_attrs.update(kwargs)
+        else:
+            self._graph_attrs.update(kwargs)
+
+    def node(self, name, label=None, **kwargs):
+        attrs = {**self._default_node_attrs, **kwargs}
+        if label:
+            attrs["label"] = label
+        attr_str = ", ".join(f'{k}="{v}"' for k, v in attrs.items())
+        self._lines.append(f'    "{name}" [{attr_str}];')
+
+    def edge(self, src, dst, **kwargs):
+        attrs = {**self._default_edge_attrs, **kwargs}
+        attr_str = ", ".join(f'{k}="{v}"' for k, v in attrs.items())
+        edge_str = f'    "{src}" -> "{dst}"'
+        if attr_str:
+            edge_str += f" [{attr_str}]"
+        self._lines.append(edge_str + ";")
+
+    def subgraph(self, name=None):
+        return _SubgraphContext(self, name)
+
+    @property
+    def source(self):
+        ga = " ".join(f'{k}="{v}"' for k, v in self._graph_attrs.items())
+        na = " ".join(f'{k}="{v}"' for k, v in self._default_node_attrs.items())
+        ea = " ".join(f'{k}="{v}"' for k, v in self._default_edge_attrs.items())
+        lines = [f"digraph {self._name} {{"]
+        if ga:
+            lines.append(f"    {ga};")
+        if na:
+            lines.append(f"    node [{na}];")
+        if ea:
+            lines.append(f"    edge [{ea}];")
+        lines.extend(self._lines)
+        lines.append("}")
+        return "\n".join(lines)
+
+
+class _SubgraphContext:
+    def __init__(self, parent, name):
+        self._parent = parent
+        self._name = name
+        self._attrs = {}
+        self._lines = []
+        self._default_node_attrs = dict(parent._default_node_attrs)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        lines = []
+        if self._name:
+            lines.append(f"    subgraph {self._name} {{")
+        else:
+            lines.append("    {")
+        attr_str = "; ".join(f'{k}="{v}"' for k, v in self._attrs.items())
+        if attr_str:
+            lines.append(f"        {attr_str};")
+        lines.extend(f"        {line.strip()}" for line in self._lines)
+        lines.append("    }")
+        self._parent._lines.extend(lines)
+
+    def attr(self, target=None, **kwargs):
+        if target == "node":
+            self._default_node_attrs.update(kwargs)
+        elif target == "edge":
+            pass
+        elif target == "rank":
+            self._attrs["rank"] = kwargs.get("rank", kwargs.get("same", "same"))
+        else:
+            self._attrs.update(kwargs)
+
+    def node(self, name, label=None, **kwargs):
+        attrs = {**self._default_node_attrs, **kwargs}
+        if label:
+            attrs["label"] = label
+        attr_str = ", ".join(f'{k}="{v}"' for k, v in attrs.items())
+        self._lines.append(f'"{name}" [{attr_str}];')
+
+
+def _new_digraph(name="G", **kwargs):
+    """Create a Digraph using graphviz library if available, else use _DotBuilder."""
+    if _HAS_GRAPHVIZ:
+        dot = graphviz.Digraph(name, format="svg")
+        for k, v in kwargs.items():
+            dot.attr(**{k: v})
+        return dot
+    return _DotBuilder(name, **kwargs)
+
+
+def _render_graphviz(dot):
+    """Render a graphviz object or DOT string via st.graphviz_chart."""
+    if _HAS_GRAPHVIZ and hasattr(dot, "source"):
+        _render_graphviz(dot)
+    elif hasattr(dot, "source"):
+        st.graphviz_chart(dot.source, use_container_width=True)
+    else:
+        st.graphviz_chart(str(dot), use_container_width=True)
+
 
 # ---------------------------------------------------------------------------
 # Shared DB helper
@@ -1111,7 +1238,7 @@ def render_data_lineage():
     dot.edge("cube_svc", "tab_Executive_Summary", label="  KPIs", color="#9561e288")
     dot.edge("neo4j_svc", "tab_Executive_Summary", label="  context", color="#38c17288", style="dashed")
 
-    st.graphviz_chart(dot, use_container_width=True)
+    _render_graphviz(dot)
 
     # ── Source system key ──────────────────────────────────────────────
     st.subheader("Source System Key")
@@ -1318,7 +1445,7 @@ def render_knowledge_graph():
     for edge in live_edges:
         dot.edge(edge["source"], edge["target"], label=f"  {edge['label']}  ", fontcolor="#555555")
 
-    st.graphviz_chart(dot, use_container_width=True)
+    _render_graphviz(dot)
 
     # Legend
     st.markdown("""
@@ -1420,7 +1547,7 @@ def render_semantic_layer():
             dot.edge(cid, kid, color=cfg["color"] + "99")
 
     st.subheader("Business Concepts → KPIs")
-    st.graphviz_chart(dot, use_container_width=True)
+    _render_graphviz(dot)
 
     st.divider()
 
@@ -1643,7 +1770,7 @@ Every AI response follows a **three-stage pipeline**:
     dot.edge("run_sql", "gold_db", label="SELECT", color="#B8860B")
     dot.edge("meta_db", "sys_prompt", label="Snowflake fallback", color="#9561e2", style="dashed")
 
-    st.graphviz_chart(dot, use_container_width=True)
+    _render_graphviz(dot)
 
     # ── Step-by-step breakdown ────────────────────────────────────────
     st.subheader("Step-by-Step Breakdown")
@@ -2298,7 +2425,7 @@ def render_business_processes():
     # Reporting (connected from revenue complete)
     dot.edge("revenue_complete", "reporting", style="dotted", color="#00695c", penwidth="1.5")
 
-    st.graphviz_chart(dot, use_container_width=True)
+    _render_graphviz(dot)
 
     # ── Diagram Legend ──────────────────────────────────────────────
     with st.expander("Diagram Legend"):
