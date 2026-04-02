@@ -82,6 +82,7 @@ from src.cortex_chat import render_chat_ui
 from src.data_loader import load_all_data
 from src.metadata_pages import (
     render_ai_architecture,
+    render_business_processes,
     render_data_catalog,
     render_data_lineage,
     render_data_validation,
@@ -939,8 +940,7 @@ elif _active == "ai_architecture":
     render_ai_architecture()
     st.stop()
 elif _active == "business_processes":
-    st.title("Business Processes")
-    st.info("Business process view is available in the metadata pages.")
+    render_business_processes()
     st.stop()
 elif _active == "data_validation":
     render_data_validation(_validation_issues)
@@ -1247,7 +1247,7 @@ with tab2:
         ],
     }
     fin_df = pd.DataFrame(fin_data)
-    st.dataframe(fin_df, hide_index=True, use_container_width=True)
+    st.dataframe(fin_df, use_container_width=True)
     export_buttons(
         "collections_revenue",
         {
@@ -1400,7 +1400,7 @@ with tab3:
                 "recovery_rate",
             ]
         ].round(2)
-        st.dataframe(denial_detail_df, hide_index=True, use_container_width=True)
+        st.dataframe(denial_detail_df, use_container_width=True)
 
     export_buttons(
         "claims_denials",
@@ -1471,7 +1471,7 @@ with tab3:
                 "% of Dirty",
                 "Resolution Guidance",
             ]
-            st.dataframe(guidance_df, hide_index=True, use_container_width=True)
+            st.dataframe(guidance_df, use_container_width=True)
             export_buttons("claim_scrubbing_breakdown", {"Scrubbing Breakdown": guidance_df})
 
 
@@ -1630,7 +1630,7 @@ with tab4:
         aging_detail = aging_df.copy()
         aging_detail["Total A/R"] = aging_detail["Total A/R"].apply(lambda x: f"${x:,.2f}")
         aging_detail["% of Total"] = aging_detail["% of Total"].apply(lambda x: f"{x:.1f}%")
-        st.dataframe(aging_detail, hide_index=True, use_container_width=True)
+        st.dataframe(aging_detail, use_container_width=True)
 
     export_buttons(
         "ar_aging_cashflow",
@@ -1724,7 +1724,7 @@ with tab5:
         "Collection Rate (%)",
         "Denial Rate (%)",
     ]
-    st.dataframe(payer_table, hide_index=True, use_container_width=True)
+    st.dataframe(payer_table, use_container_width=True)
 
     export_buttons(
         "payer_analysis",
@@ -1833,7 +1833,7 @@ with tab5:
                 "Clean Claim",
                 "Payment Amount",
             ]
-            st.dataframe(claim_detail, hide_index=True, use_container_width=True)
+            st.dataframe(claim_detail, use_container_width=True)
             export_buttons(
                 f"payer_drilldown_{selected_drilldown_payer.replace(' ', '_')}",
                 {
@@ -1940,7 +1940,7 @@ with tab6:
         "Collection Rate",
         "Avg $/Encounter",
     ]
-    st.dataframe(dept_table, hide_index=True, use_container_width=True)
+    st.dataframe(dept_table, use_container_width=True)
     export_buttons(
         "department_performance",
         {
@@ -2021,7 +2021,7 @@ with tab6:
                 "Claim Status",
                 "Payment Amount",
             ]
-            st.dataframe(enc_detail, hide_index=True, use_container_width=True)
+            st.dataframe(enc_detail, use_container_width=True)
             export_buttons(
                 f"dept_drilldown_{selected_drilldown_dept.replace(' ', '_')}",
                 {
@@ -2182,7 +2182,7 @@ with tab7:
             "Denial Rate (%)",
             "Clean Claim Rate (%)",
         ]
-        st.dataframe(scorecard, hide_index=True, use_container_width=True)
+        st.dataframe(scorecard, use_container_width=True)
         export_buttons("provider_performance", {"Provider Scorecard": scorecard})
 
         # ── Provider Drill-Down ───────────────────────────────────────
@@ -2375,7 +2375,7 @@ with tab8:
             "Denied Claims",
             "Denial Rate (%)",
         ]
-        st.dataframe(cpt_table, hide_index=True, use_container_width=True)
+        st.dataframe(cpt_table, use_container_width=True)
         export_buttons("cpt_code_analysis", {"CPT Code Analysis": cpt_table})
 
 
@@ -2559,7 +2559,7 @@ with tab9:
             "Underpaid Claims",
             "Underpayment Rate (%)",
         ]
-        st.dataframe(underpay_table, hide_index=True, use_container_width=True)
+        st.dataframe(underpay_table, use_container_width=True)
         export_buttons("underpayment_analysis", {"Underpayment by Payer": underpay_table})
 
 
@@ -3156,7 +3156,7 @@ with tab11:
             "Avg per Claim ($)",
             "% of Allowed",
         ]
-        st.dataframe(pr_table, hide_index=True, use_container_width=True)
+        st.dataframe(pr_table, use_container_width=True)
         export_buttons("patient_responsibility", {"Patient Responsibility": pr_table})
 
 
