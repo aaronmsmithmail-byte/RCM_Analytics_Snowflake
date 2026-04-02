@@ -27,10 +27,10 @@ import pandas as pd
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
 
-
 # ---------------------------------------------------------------------------
 # Snowpark session helper
 # ---------------------------------------------------------------------------
+
 
 def _get_session():
     """Return the active Snowpark session provided by Streamlit in Snowflake."""
@@ -40,6 +40,7 @@ def _get_session():
 # ---------------------------------------------------------------------------
 # Parsing helpers (identical to the DuckDB version)
 # ---------------------------------------------------------------------------
+
 
 def _parse_dates(df, date_columns):
     """
@@ -156,6 +157,7 @@ _GOLD_SCHEMA = "RCM_ANALYTICS.GOLD"
 # ---------------------------------------------------------------------------
 # Public loaders
 # ---------------------------------------------------------------------------
+
 
 @st.cache_data(ttl=300)
 def load_all_data():

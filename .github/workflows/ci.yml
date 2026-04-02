@@ -24,10 +24,10 @@ jobs:
         run: pip install ruff>=0.8.0
 
       - name: Check linting rules
-        run: ruff check src/ tests/ app.py generate_sample_data.py
+        run: ruff check snowflake/streamlit/ tests/ generate_sample_data.py
 
       - name: Check formatting
-        run: ruff format --check src/ tests/ app.py generate_sample_data.py
+        run: ruff format --check snowflake/streamlit/ tests/ generate_sample_data.py
 
   test:
     name: Test
@@ -49,7 +49,7 @@ jobs:
         run: python generate_sample_data.py
 
       - name: Run tests with coverage
-        run: pytest tests/ -v --tb=short --cov=src --cov-report=term-missing --cov-report=xml:coverage.xml
+        run: pytest tests/ -v --tb=short --cov=snowflake/streamlit/src --cov-report=term-missing --cov-report=xml:coverage.xml
 
       - name: Coverage summary
         if: always()
@@ -73,7 +73,7 @@ jobs:
         run: pip install bandit pip-audit
 
       - name: Run Bandit security scan
-        run: bandit -r src/ app.py -c bandit.toml --severity-level medium
+        run: bandit -r snowflake/streamlit/ -c bandit.toml --severity-level medium
 
       - name: Check dependencies for vulnerabilities
         run: pip-audit -r requirements.txt

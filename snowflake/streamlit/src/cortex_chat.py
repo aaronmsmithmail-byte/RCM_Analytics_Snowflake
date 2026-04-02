@@ -49,16 +49,20 @@ def send_analyst_message(session, user_question, message_history=None):
     messages = []
     if message_history:
         for msg in message_history:
-            messages.append({
-                "role": msg["role"],
-                "content": [{"type": "text", "text": msg["content"]}],
-            })
+            messages.append(
+                {
+                    "role": msg["role"],
+                    "content": [{"type": "text", "text": msg["content"]}],
+                }
+            )
 
     # Add the current user question
-    messages.append({
-        "role": "user",
-        "content": [{"type": "text", "text": user_question}],
-    })
+    messages.append(
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": user_question}],
+        }
+    )
 
     # Call Cortex Analyst via the REST API (available within SiS)
     try:
@@ -105,7 +109,7 @@ def _call_analyst_via_rest(session, messages):
 
     resp = _snowflake.send_snow_api_request(
         "POST",
-        f"/api/v2/cortex/analyst/message",
+        "/api/v2/cortex/analyst/message",
         {},
         {},
         request_body,
@@ -203,16 +207,15 @@ def render_chat_ui():
         # Display user message
         with st.chat_message("user"):
             st.markdown(user_input)
-        st.session_state.analyst_messages.append({
-            "role": "user",
-            "content": user_input,
-        })
+        st.session_state.analyst_messages.append(
+            {
+                "role": "user",
+                "content": user_input,
+            }
+        )
 
         # Build conversation history for context
-        history = [
-            {"role": m["role"], "content": m["content"]}
-            for m in st.session_state.analyst_messages[:-1]
-        ]
+        history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.analyst_messages[:-1]]
 
         # Get Cortex Analyst response
         with st.chat_message("analyst"):
@@ -221,10 +224,12 @@ def render_chat_ui():
 
             if response["type"] == "error":
                 st.error(response["content"])
-                st.session_state.analyst_messages.append({
-                    "role": "analyst",
-                    "content": f"Error: {response['content']}",
-                })
+                st.session_state.analyst_messages.append(
+                    {
+                        "role": "analyst",
+                        "content": f"Error: {response['content']}",
+                    }
+                )
             elif response["type"] == "sql":
                 st.markdown(response["content"])
                 if response["sql"]:
@@ -232,17 +237,21 @@ def render_chat_ui():
                         st.code(response["sql"], language="sql")
                 if response["results"] is not None:
                     st.dataframe(response["results"], use_container_width=True)
-                st.session_state.analyst_messages.append({
-                    "role": "analyst",
-                    "content": response["content"],
-                    "sql": response["sql"],
-                    "results": response["results"],
-                })
+                st.session_state.analyst_messages.append(
+                    {
+                        "role": "analyst",
+                        "content": response["content"],
+                        "sql": response["sql"],
+                        "results": response["results"],
+                    }
+                )
             else:
                 st.markdown(response["content"])
-                st.session_state.analyst_messages.append({
-                    "role": "analyst",
-                    "content": response["content"],
-                })
+                st.session_state.analyst_messages.append(
+                    {
+                        "role": "analyst",
+                        "content": response["content"],
+                    }
+                )
 
         st.rerun()

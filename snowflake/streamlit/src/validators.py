@@ -176,50 +176,53 @@ def validate_encounters_have_valid_providers():
 
 def validate_no_negative_charges():
     """Charge amounts must be non-negative."""
-    return _count(
-        "SELECT COUNT(*) FROM RCM_ANALYTICS.SILVER.CHARGES WHERE CHARGE_AMOUNT < 0"
-    ) == 0
+    return _count("SELECT COUNT(*) FROM RCM_ANALYTICS.SILVER.CHARGES WHERE CHARGE_AMOUNT < 0") == 0
 
 
 def validate_no_negative_payments():
     """Payment amounts must be non-negative."""
-    return _count(
-        "SELECT COUNT(*) FROM RCM_ANALYTICS.SILVER.PAYMENTS WHERE PAYMENT_AMOUNT < 0"
-    ) == 0
+    return _count("SELECT COUNT(*) FROM RCM_ANALYTICS.SILVER.PAYMENTS WHERE PAYMENT_AMOUNT < 0") == 0
 
 
 def validate_no_negative_denied_amounts():
     """Denied amounts must be non-negative."""
-    return _count(
-        "SELECT COUNT(*) FROM RCM_ANALYTICS.SILVER.DENIALS WHERE DENIED_AMOUNT < 0"
-    ) == 0
+    return _count("SELECT COUNT(*) FROM RCM_ANALYTICS.SILVER.DENIALS WHERE DENIED_AMOUNT < 0") == 0
 
 
 def validate_claim_status_values():
     """Claim status must be one of the allowed values."""
-    return _count("""
+    return (
+        _count("""
         SELECT COUNT(*)
         FROM RCM_ANALYTICS.SILVER.CLAIMS
         WHERE CLAIM_STATUS NOT IN ('Paid', 'Partially Paid', 'Denied', 'Pending', 'Appealed')
-    """) == 0
+    """)
+        == 0
+    )
 
 
 def validate_clean_claim_boolean():
     """is_clean_claim must be 0 or 1."""
-    return _count("""
+    return (
+        _count("""
         SELECT COUNT(*)
         FROM RCM_ANALYTICS.SILVER.CLAIMS
         WHERE IS_CLEAN_CLAIM NOT IN (0, 1)
-    """) == 0
+    """)
+        == 0
+    )
 
 
 def validate_payment_accuracy_boolean():
     """is_accurate_payment must be 0 or 1."""
-    return _count("""
+    return (
+        _count("""
         SELECT COUNT(*)
         FROM RCM_ANALYTICS.SILVER.PAYMENTS
         WHERE IS_ACCURATE_PAYMENT NOT IN (0, 1)
-    """) == 0
+    """)
+        == 0
+    )
 
 
 def validate_no_null_primary_keys():

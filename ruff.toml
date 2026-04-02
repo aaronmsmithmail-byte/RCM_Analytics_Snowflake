@@ -31,9 +31,9 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"app.py" = ["E402"]                   # Streamlit requires st.set_page_config() before other imports
-"generate_sample_data.py" = ["T201"]  # print statements expected in data generation script
-"tests/*" = ["E702", "E701"]          # compact test assertions with semicolons
+"snowflake/streamlit/rcm_dashboard.py" = ["E402"]  # Streamlit requires st.set_page_config() before other imports
+"generate_sample_data.py" = ["T201"]               # print statements expected in data generation script
+"tests/*" = ["E702", "E701"]                       # compact test assertions with semicolons
 
 [lint.isort]
 known-first-party = ["src"]

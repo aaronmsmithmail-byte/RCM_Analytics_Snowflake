@@ -11,10 +11,10 @@ import plotly.graph_objects as go
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
 
-
 # ===========================================================================
 # Helper: query metadata tables from Snowflake
 # ===========================================================================
+
 
 def _query_meta(sql):
     """Execute a metadata query and return a DataFrame. Returns empty on error."""
@@ -35,13 +35,45 @@ _KG_NODES = [
     {"id": "payers", "label": "payers", "x": 5.0, "y": 9.0, "color": "#5b8dee", "size": 30, "group": "Reference"},
     {"id": "patients", "label": "patients", "x": 1.5, "y": 7.0, "color": "#5b8dee", "size": 30, "group": "Reference"},
     {"id": "providers", "label": "providers", "x": 8.5, "y": 7.0, "color": "#5b8dee", "size": 30, "group": "Reference"},
-    {"id": "encounters", "label": "encounters", "x": 5.0, "y": 5.5, "color": "#38c172", "size": 36, "group": "Transactional"},
+    {
+        "id": "encounters",
+        "label": "encounters",
+        "x": 5.0,
+        "y": 5.5,
+        "color": "#38c172",
+        "size": 36,
+        "group": "Transactional",
+    },
     {"id": "claims", "label": "claims", "x": 5.0, "y": 3.0, "color": "#38c172", "size": 36, "group": "Transactional"},
     {"id": "charges", "label": "charges", "x": 1.5, "y": 4.5, "color": "#38c172", "size": 26, "group": "Transactional"},
-    {"id": "payments", "label": "payments", "x": 2.5, "y": 1.0, "color": "#38c172", "size": 26, "group": "Transactional"},
+    {
+        "id": "payments",
+        "label": "payments",
+        "x": 2.5,
+        "y": 1.0,
+        "color": "#38c172",
+        "size": 26,
+        "group": "Transactional",
+    },
     {"id": "denials", "label": "denials", "x": 5.0, "y": 0.5, "color": "#38c172", "size": 26, "group": "Transactional"},
-    {"id": "adjustments", "label": "adjustments", "x": 7.5, "y": 1.0, "color": "#38c172", "size": 26, "group": "Transactional"},
-    {"id": "operating_costs", "label": "operating\ncosts", "x": 9.0, "y": 4.5, "color": "#e8a838", "size": 26, "group": "Operational"},
+    {
+        "id": "adjustments",
+        "label": "adjustments",
+        "x": 7.5,
+        "y": 1.0,
+        "color": "#38c172",
+        "size": 26,
+        "group": "Transactional",
+    },
+    {
+        "id": "operating_costs",
+        "label": "operating\ncosts",
+        "x": 9.0,
+        "y": 4.5,
+        "color": "#e8a838",
+        "size": 26,
+        "group": "Operational",
+    },
 ]
 
 _KG_EDGES = [
@@ -59,29 +91,94 @@ _KG_EDGES = [
 ]
 
 _TABLE_CATALOG = [
-    {"Layer": "Bronze", "Table": "BRONZE.PAYERS", "Source": "Payer Master", "Description": "Raw CSV — insurance payer list"},
+    {
+        "Layer": "Bronze",
+        "Table": "BRONZE.PAYERS",
+        "Source": "Payer Master",
+        "Description": "Raw CSV — insurance payer list",
+    },
     {"Layer": "Bronze", "Table": "BRONZE.PATIENTS", "Source": "EHR", "Description": "Raw CSV — patient demographics"},
     {"Layer": "Bronze", "Table": "BRONZE.PROVIDERS", "Source": "EHR", "Description": "Raw CSV — clinician roster"},
     {"Layer": "Bronze", "Table": "BRONZE.ENCOUNTERS", "Source": "EHR", "Description": "Raw CSV — patient visits"},
-    {"Layer": "Bronze", "Table": "BRONZE.CHARGES", "Source": "EHR / Charge Capture", "Description": "Raw CSV — line-item charges"},
-    {"Layer": "Bronze", "Table": "BRONZE.CLAIMS", "Source": "Clearinghouse", "Description": "Raw CSV — insurance claims"},
-    {"Layer": "Bronze", "Table": "BRONZE.PAYMENTS", "Source": "Clearinghouse / ERA", "Description": "Raw CSV — payments received"},
-    {"Layer": "Bronze", "Table": "BRONZE.DENIALS", "Source": "Clearinghouse / ERA", "Description": "Raw CSV — claim denials"},
-    {"Layer": "Bronze", "Table": "BRONZE.ADJUSTMENTS", "Source": "Billing System", "Description": "Raw CSV — write-offs & adjustments"},
-    {"Layer": "Bronze", "Table": "BRONZE.OPERATING_COSTS", "Source": "ERP / Finance", "Description": "Raw CSV — monthly RCM costs"},
+    {
+        "Layer": "Bronze",
+        "Table": "BRONZE.CHARGES",
+        "Source": "EHR / Charge Capture",
+        "Description": "Raw CSV — line-item charges",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "BRONZE.CLAIMS",
+        "Source": "Clearinghouse",
+        "Description": "Raw CSV — insurance claims",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "BRONZE.PAYMENTS",
+        "Source": "Clearinghouse / ERA",
+        "Description": "Raw CSV — payments received",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "BRONZE.DENIALS",
+        "Source": "Clearinghouse / ERA",
+        "Description": "Raw CSV — claim denials",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "BRONZE.ADJUSTMENTS",
+        "Source": "Billing System",
+        "Description": "Raw CSV — write-offs & adjustments",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "BRONZE.OPERATING_COSTS",
+        "Source": "ERP / Finance",
+        "Description": "Raw CSV — monthly RCM costs",
+    },
     {"Layer": "Silver", "Table": "SILVER.PAYERS", "Source": "ETL", "Description": "Typed — insurance payer master"},
-    {"Layer": "Silver", "Table": "SILVER.PATIENTS", "Source": "ETL", "Description": "Typed — patient demographics + FK"},
+    {
+        "Layer": "Silver",
+        "Table": "SILVER.PATIENTS",
+        "Source": "ETL",
+        "Description": "Typed — patient demographics + FK",
+    },
     {"Layer": "Silver", "Table": "SILVER.PROVIDERS", "Source": "ETL", "Description": "Typed — clinician roster"},
     {"Layer": "Silver", "Table": "SILVER.ENCOUNTERS", "Source": "ETL", "Description": "Typed — patient visits + FK"},
-    {"Layer": "Silver", "Table": "SILVER.CHARGES", "Source": "ETL", "Description": "Typed — charges with FLOAT amounts"},
-    {"Layer": "Silver", "Table": "SILVER.CLAIMS", "Source": "ETL", "Description": "Typed — claims with status + clean flag"},
-    {"Layer": "Silver", "Table": "SILVER.PAYMENTS", "Source": "ETL", "Description": "Typed — payments with accuracy flag"},
-    {"Layer": "Silver", "Table": "SILVER.DENIALS", "Source": "ETL", "Description": "Typed — denials with appeal tracking"},
+    {
+        "Layer": "Silver",
+        "Table": "SILVER.CHARGES",
+        "Source": "ETL",
+        "Description": "Typed — charges with FLOAT amounts",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "SILVER.CLAIMS",
+        "Source": "ETL",
+        "Description": "Typed — claims with status + clean flag",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "SILVER.PAYMENTS",
+        "Source": "ETL",
+        "Description": "Typed — payments with accuracy flag",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "SILVER.DENIALS",
+        "Source": "ETL",
+        "Description": "Typed — denials with appeal tracking",
+    },
     {"Layer": "Silver", "Table": "SILVER.ADJUSTMENTS", "Source": "ETL", "Description": "Typed — financial adjustments"},
     {"Layer": "Silver", "Table": "SILVER.OPERATING_COSTS", "Source": "ETL", "Description": "Typed — monthly RCM costs"},
     {"Layer": "Gold", "Table": "GOLD.MONTHLY_KPIS", "Source": "View", "Description": "Monthly KPI rollup"},
     {"Layer": "Gold", "Table": "GOLD.PAYER_PERFORMANCE", "Source": "View", "Description": "Payer performance summary"},
-    {"Layer": "Gold", "Table": "GOLD.DEPARTMENT_PERFORMANCE", "Source": "View", "Description": "Department performance"},
+    {
+        "Layer": "Gold",
+        "Table": "GOLD.DEPARTMENT_PERFORMANCE",
+        "Source": "View",
+        "Description": "Department performance",
+    },
     {"Layer": "Gold", "Table": "GOLD.AR_AGING", "Source": "View", "Description": "A/R aging buckets"},
     {"Layer": "Gold", "Table": "GOLD.DENIAL_ANALYSIS", "Source": "View", "Description": "Denial reason analysis"},
 ]
@@ -90,23 +187,90 @@ _TABLE_CATALOG = [
 _KPI_CATALOG = []
 _SEMANTIC_LAYER = []
 _KG_RELATIONSHIPS = [
-    {"parent_table": "payers", "child_table": "patients", "join_column": "PRIMARY_PAYER_ID", "cardinality": "1:N", "business_meaning": "Each patient has one primary payer"},
-    {"parent_table": "payers", "child_table": "claims", "join_column": "PAYER_ID", "cardinality": "1:N", "business_meaning": "Claims are billed to one payer"},
-    {"parent_table": "patients", "child_table": "encounters", "join_column": "PATIENT_ID", "cardinality": "1:N", "business_meaning": "A patient can have many visits"},
-    {"parent_table": "patients", "child_table": "claims", "join_column": "PATIENT_ID", "cardinality": "1:N", "business_meaning": "Claims track which patient received services"},
-    {"parent_table": "payers", "child_table": "payments", "join_column": "PAYER_ID", "cardinality": "1:N", "business_meaning": "Payments remitted by a specific payer"},
-    {"parent_table": "providers", "child_table": "encounters", "join_column": "PROVIDER_ID", "cardinality": "1:N", "business_meaning": "A provider sees many patients"},
-    {"parent_table": "encounters", "child_table": "charges", "join_column": "ENCOUNTER_ID", "cardinality": "1:N", "business_meaning": "Each visit generates line-item charges"},
-    {"parent_table": "encounters", "child_table": "claims", "join_column": "ENCOUNTER_ID", "cardinality": "1:N", "business_meaning": "Each visit produces insurance claims"},
-    {"parent_table": "claims", "child_table": "payments", "join_column": "CLAIM_ID", "cardinality": "1:N", "business_meaning": "A claim may receive partial or split payments"},
-    {"parent_table": "claims", "child_table": "denials", "join_column": "CLAIM_ID", "cardinality": "1:N", "business_meaning": "A claim can be denied one or more times"},
-    {"parent_table": "claims", "child_table": "adjustments", "join_column": "CLAIM_ID", "cardinality": "1:N", "business_meaning": "Contractual write-offs applied per claim"},
+    {
+        "parent_table": "payers",
+        "child_table": "patients",
+        "join_column": "PRIMARY_PAYER_ID",
+        "cardinality": "1:N",
+        "business_meaning": "Each patient has one primary payer",
+    },
+    {
+        "parent_table": "payers",
+        "child_table": "claims",
+        "join_column": "PAYER_ID",
+        "cardinality": "1:N",
+        "business_meaning": "Claims are billed to one payer",
+    },
+    {
+        "parent_table": "patients",
+        "child_table": "encounters",
+        "join_column": "PATIENT_ID",
+        "cardinality": "1:N",
+        "business_meaning": "A patient can have many visits",
+    },
+    {
+        "parent_table": "patients",
+        "child_table": "claims",
+        "join_column": "PATIENT_ID",
+        "cardinality": "1:N",
+        "business_meaning": "Claims track which patient received services",
+    },
+    {
+        "parent_table": "payers",
+        "child_table": "payments",
+        "join_column": "PAYER_ID",
+        "cardinality": "1:N",
+        "business_meaning": "Payments remitted by a specific payer",
+    },
+    {
+        "parent_table": "providers",
+        "child_table": "encounters",
+        "join_column": "PROVIDER_ID",
+        "cardinality": "1:N",
+        "business_meaning": "A provider sees many patients",
+    },
+    {
+        "parent_table": "encounters",
+        "child_table": "charges",
+        "join_column": "ENCOUNTER_ID",
+        "cardinality": "1:N",
+        "business_meaning": "Each visit generates line-item charges",
+    },
+    {
+        "parent_table": "encounters",
+        "child_table": "claims",
+        "join_column": "ENCOUNTER_ID",
+        "cardinality": "1:N",
+        "business_meaning": "Each visit produces insurance claims",
+    },
+    {
+        "parent_table": "claims",
+        "child_table": "payments",
+        "join_column": "CLAIM_ID",
+        "cardinality": "1:N",
+        "business_meaning": "A claim may receive partial or split payments",
+    },
+    {
+        "parent_table": "claims",
+        "child_table": "denials",
+        "join_column": "CLAIM_ID",
+        "cardinality": "1:N",
+        "business_meaning": "A claim can be denied one or more times",
+    },
+    {
+        "parent_table": "claims",
+        "child_table": "adjustments",
+        "join_column": "CLAIM_ID",
+        "cardinality": "1:N",
+        "business_meaning": "Contractual write-offs applied per claim",
+    },
 ]
 
 
 # ===========================================================================
 # Page 1: Data Catalog
 # ===========================================================================
+
 
 def render_data_catalog():
     st.title("Data Catalog")
@@ -133,9 +297,11 @@ def render_data_catalog():
 
     df = raw.copy()
     if search:
-        mask = (df["Metric"].str.contains(search, case=False, na=False) |
-                df["Definition"].str.contains(search, case=False, na=False) |
-                df["Formula"].str.contains(search, case=False, na=False))
+        mask = (
+            df["Metric"].str.contains(search, case=False, na=False)
+            | df["Definition"].str.contains(search, case=False, na=False)
+            | df["Formula"].str.contains(search, case=False, na=False)
+        )
         df = df[mask]
     if cat_filter != "All":
         df = df[df["Category"] == cat_filter]
@@ -150,6 +316,7 @@ def render_data_catalog():
 # ===========================================================================
 # Page 2: Data Lineage
 # ===========================================================================
+
 
 def render_data_lineage():
     st.title("Data Lineage")
@@ -179,21 +346,48 @@ def render_data_lineage():
     """)
 
     st.subheader("Pipeline Components")
-    components = pd.DataFrame([
-        {"Stage": "1. File Upload", "Component": "@STAGING.RCM_STAGE", "Description": "Internal Snowflake stage for CSV files"},
-        {"Stage": "2. Bronze Load", "Component": "COPY INTO", "Description": "Raw CSV → Bronze tables (all VARCHAR)"},
-        {"Stage": "3. Silver ETL", "Component": "SP_BRONZE_TO_SILVER()", "Description": "Type casting, validation, FK enforcement"},
-        {"Stage": "4. Gold Views", "Component": "SQL Views", "Description": "Pre-aggregated business KPIs"},
-        {"Stage": "5. Dashboard", "Component": "Streamlit in Snowflake", "Description": "12-tab interactive analytics"},
-        {"Stage": "6. AI Chat", "Component": "Cortex Analyst", "Description": "Natural language → SQL via semantic model"},
-        {"Stage": "7. Scheduling", "Component": "DAILY_ETL_TASK", "Description": "Cron-based daily refresh at 6 AM ET"},
-    ])
+    components = pd.DataFrame(
+        [
+            {
+                "Stage": "1. File Upload",
+                "Component": "@STAGING.RCM_STAGE",
+                "Description": "Internal Snowflake stage for CSV files",
+            },
+            {
+                "Stage": "2. Bronze Load",
+                "Component": "COPY INTO",
+                "Description": "Raw CSV → Bronze tables (all VARCHAR)",
+            },
+            {
+                "Stage": "3. Silver ETL",
+                "Component": "SP_BRONZE_TO_SILVER()",
+                "Description": "Type casting, validation, FK enforcement",
+            },
+            {"Stage": "4. Gold Views", "Component": "SQL Views", "Description": "Pre-aggregated business KPIs"},
+            {
+                "Stage": "5. Dashboard",
+                "Component": "Streamlit in Snowflake",
+                "Description": "12-tab interactive analytics",
+            },
+            {
+                "Stage": "6. AI Chat",
+                "Component": "Cortex Analyst",
+                "Description": "Natural language → SQL via semantic model",
+            },
+            {
+                "Stage": "7. Scheduling",
+                "Component": "DAILY_ETL_TASK",
+                "Description": "Cron-based daily refresh at 6 AM ET",
+            },
+        ]
+    )
     st.dataframe(components, use_container_width=True, hide_index=True)
 
 
 # ===========================================================================
 # Page 3: Knowledge Graph
 # ===========================================================================
+
 
 def render_knowledge_graph():
     st.title("Knowledge Graph")
@@ -226,16 +420,25 @@ def render_knowledge_graph():
             edge_y += [y0, y1, None]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=edge_x, y=edge_y, mode="lines",
-                             line=dict(width=1.5, color="#888"), hoverinfo="none"))
-    fig.add_trace(go.Scatter(x=node_x, y=node_y, mode="markers+text",
-                             marker=dict(size=node_size, color=node_color, line=dict(width=1, color="white")),
-                             text=node_text, textposition="top center",
-                             hoverinfo="text"))
-    fig.update_layout(showlegend=False, height=500,
-                      xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                      yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                      margin=dict(l=20, r=20, t=20, b=20))
+    fig.add_trace(go.Scatter(x=edge_x, y=edge_y, mode="lines", line=dict(width=1.5, color="#888"), hoverinfo="none"))
+    fig.add_trace(
+        go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode="markers+text",
+            marker=dict(size=node_size, color=node_color, line=dict(width=1, color="white")),
+            text=node_text,
+            textposition="top center",
+            hoverinfo="text",
+        )
+    )
+    fig.update_layout(
+        showlegend=False,
+        height=500,
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        margin=dict(l=20, r=20, t=20, b=20),
+    )
     st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Foreign Key Relationships")
@@ -245,6 +448,7 @@ def render_knowledge_graph():
 # ===========================================================================
 # Page 4: Semantic Layer
 # ===========================================================================
+
 
 def render_semantic_layer():
     st.title("Semantic Layer")
@@ -282,6 +486,7 @@ def render_semantic_layer():
 # ===========================================================================
 # Page 5: AI Architecture
 # ===========================================================================
+
 
 def render_ai_architecture():
     st.title("AI Architecture")
@@ -331,6 +536,7 @@ def render_ai_architecture():
 # Page 6: Data Validation
 # ===========================================================================
 
+
 def render_data_validation(issues=None):
     st.title("Data Validation")
     st.caption("Data quality checks against the Silver layer.")
@@ -357,6 +563,7 @@ def render_data_validation(issues=None):
 # ===========================================================================
 # Page 7: Feature Backlog
 # ===========================================================================
+
 
 def render_feature_backlog():
     st.title("Feature Backlog")
