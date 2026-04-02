@@ -121,20 +121,25 @@ snow sql -f snowflake/catalog/tags_and_comments.sql
 PUT file:///path/to/snowflake/cortex/rcm_semantic_model.yaml @RCM_ANALYTICS.STAGING.RCM_STAGE/cortex/ AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
 ```
 
-### 6. Run the dashboard
+### 6. Deploy the Streamlit dashboard
 
-Deploy the Streamlit app in Snowflake via Snowsight:
-1. Go to Snowsight → Projects → Streamlit
-2. Create new Streamlit app from `snowflake/streamlit/rcm_dashboard.py`
-3. Set warehouse to `RCM_WH` and database to `RCM_ANALYTICS`
+Create the Streamlit app directly from the Git repo (run in a SQL worksheet):
 
-Or via Snowflake CLI:
-```bash
-cd snowflake/streamlit && snow streamlit deploy --replace
-streamlit run app.py
+```sql
+USE ROLE SYSADMIN;
+USE DATABASE RCM_ANALYTICS;
+USE SCHEMA STAGING;
+
+CREATE OR REPLACE STREAMLIT RCM_DASHBOARD
+    ROOT_LOCATION = '@RCM_ANALYTICS.STAGING.RCM_REPO/branches/main/snowflake/streamlit'
+    MAIN_FILE = 'rcm_dashboard.py'
+    QUERY_WAREHOUSE = RCM_WH
+    COMMENT = 'Healthcare RCM Analytics Dashboard';
 ```
 
-The app opens at `http://localhost:8501`. The first launch initializes the database (a few seconds); subsequent launches use the cached database.
+Then open the app: **Projects > Streamlit > RCM_DASHBOARD**
+
+The app reads code directly from the Git repo, so pushing changes to `main` and running `ALTER GIT REPOSITORY RCM_REPO FETCH;` automatically updates the dashboard.
 
 ### Full Stack with Docker Compose (Cube + Neo4j)
 
