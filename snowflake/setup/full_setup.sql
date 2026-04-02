@@ -227,26 +227,23 @@ LS @RCM_ANALYTICS.STAGING.RCM_STAGE/cortex/;
 
 
 -- ============================================================================
--- SECTION 8: Deploy Streamlit App
+-- SECTION 8: Deploy Streamlit App (run as SYSADMIN)
 -- ============================================================================
--- The Streamlit app must be created via Snowsight UI or Snowflake CLI.
---
--- Option A (Snowsight UI):
---   1. Go to Projects > Streamlit > + Streamlit App
---   2. App name: RCM_DASHBOARD
---   3. Database: RCM_ANALYTICS, Schema: STAGING, Warehouse: RCM_WH
---   4. Click "Create"
---   5. In the editor, replace the sample code with the contents of:
---      snowflake/streamlit/rcm_dashboard.py (from the Git repo)
---   6. Add the src/ folder files as additional pages/modules
---
--- Option B (Snowflake CLI — recommended for automation):
---   cd snowflake/streamlit
---   snow streamlit deploy --replace \
---     --database RCM_ANALYTICS \
---     --schema STAGING \
---     --warehouse RCM_WH
+-- Creates the Streamlit app directly from the Git repo. The app reads
+-- rcm_dashboard.py and src/ modules from the main branch automatically.
 -- ============================================================================
+
+USE ROLE SYSADMIN;
+USE DATABASE RCM_ANALYTICS;
+USE SCHEMA STAGING;
+
+CREATE OR REPLACE STREAMLIT RCM_DASHBOARD
+    ROOT_LOCATION = '@RCM_ANALYTICS.STAGING.RCM_REPO/branches/main/snowflake/streamlit'
+    MAIN_FILE = 'rcm_dashboard.py'
+    QUERY_WAREHOUSE = RCM_WH
+    COMMENT = 'Healthcare RCM Analytics Dashboard — 12 tabs + Cortex Analyst AI';
+
+-- To open the app: Projects > Streamlit > RCM_DASHBOARD
 
 
 -- ============================================================================

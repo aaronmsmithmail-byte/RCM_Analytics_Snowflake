@@ -894,7 +894,7 @@ if not _freshness_df.empty:
 # ── Feature Backlog navigation (sidebar) ─────────────────────────────
 st.sidebar.divider()
 st.sidebar.markdown("### Feature Backlog")
-if st.sidebar.button("Review/Edit Backlog", width="stretch"):
+if st.sidebar.button("Review/Edit Backlog", use_container_width=True):
     st.session_state["active_page"] = "feature_backlog"
 
 # ── Metadata navigation (sidebar) ────────────────────────────────────
@@ -902,23 +902,23 @@ if st.sidebar.button("Review/Edit Backlog", width="stretch"):
 # every page, including metadata pages that call st.stop() early.
 st.sidebar.divider()
 st.sidebar.markdown("### Metadata")
-if st.sidebar.button("Business Process", width="stretch"):
+if st.sidebar.button("Business Process", use_container_width=True):
     st.session_state["active_page"] = "business_processes"
-if st.sidebar.button("Data Catalog", width="stretch"):
+if st.sidebar.button("Data Catalog", use_container_width=True):
     st.session_state["active_page"] = "data_catalog"
-if st.sidebar.button("Data Lineage", width="stretch"):
+if st.sidebar.button("Data Lineage", use_container_width=True):
     st.session_state["active_page"] = "data_lineage"
-if st.sidebar.button("Knowledge Graph", width="stretch"):
+if st.sidebar.button("Knowledge Graph", use_container_width=True):
     st.session_state["active_page"] = "knowledge_graph"
-if st.sidebar.button("Semantic Layer", width="stretch"):
+if st.sidebar.button("Semantic Layer", use_container_width=True):
     st.session_state["active_page"] = "semantic_layer"
-if st.sidebar.button("AI Architecture", width="stretch"):
+if st.sidebar.button("AI Architecture", use_container_width=True):
     st.session_state["active_page"] = "ai_architecture"
-if st.sidebar.button("Data Validation", width="stretch"):
+if st.sidebar.button("Data Validation", use_container_width=True):
     st.session_state["active_page"] = "data_validation"
 
 if st.session_state["active_page"] != "dashboard":
-    if st.sidebar.button("Back to Dashboard", type="primary", width="stretch"):
+    if st.sidebar.button("Back to Dashboard", type="primary", use_container_width=True):
         st.session_state["active_page"] = "dashboard"
 
 # ── Page router ──────────────────────────────────────────────────────
@@ -1059,7 +1059,7 @@ with tab1:
             annotation_font_color="#10B981",
         )
         fig.update_layout(height=350, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right:
         st.subheader("Net Collection Rate Trend")
@@ -1075,7 +1075,7 @@ with tab1:
             annotation_font_color="#10B981",
         )
         fig.update_layout(height=350, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Volume summary
     st.subheader("Monthly Volume")
@@ -1117,7 +1117,7 @@ with tab1:
         yaxis_title="Count",
         plot_bgcolor="rgba(248,250,252,0.5)",
     )
-    st.plotly_chart(fig, theme="streamlit", width="stretch")
+    st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
 
 # =====================================================================
@@ -1187,7 +1187,7 @@ with tab2:
         )
     )
     fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False)
-    st.plotly_chart(fig, theme="streamlit", width="stretch")
+    st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Collection rate trends
     col_left, col_right = st.columns(2)
@@ -1203,7 +1203,7 @@ with tab2:
         )
         fig.update_traces(line_width=2.5)
         fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis_title="%", plot_bgcolor="rgba(248,250,252,0.5)")
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right:
         st.subheader("Cost to Collect Trend")
@@ -1219,7 +1219,7 @@ with tab2:
             y=5, line_dash="dash", line_color="#10B981", annotation_text="Target: 5%", annotation_font_color="#10B981"
         )
         fig.update_layout(height=350, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Avg reimbursement trend
     st.subheader("Average Reimbursement per Claim")
@@ -1232,7 +1232,7 @@ with tab2:
     )
     fig.update_traces(marker_line_width=0, opacity=0.9)
     fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
-    st.plotly_chart(fig, theme="streamlit", width="stretch")
+    st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Financial summary
     st.subheader("Financial Summary")
@@ -1247,7 +1247,7 @@ with tab2:
         ],
     }
     fin_df = pd.DataFrame(fin_data)
-    st.dataframe(fin_df, hide_index=True, width="stretch")
+    st.dataframe(fin_df, hide_index=True, use_container_width=True)
     export_buttons(
         "collections_revenue",
         {
@@ -1304,7 +1304,7 @@ with tab3:
         status_counts.columns = ["Status", "Count"]
         fig = px.pie(status_counts, values="Count", names="Status", color_discrete_sequence=RCM_COLORS)
         fig.update_layout(height=350, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right:
         st.subheader("Top Denial Reasons")
@@ -1318,7 +1318,7 @@ with tab3:
             labels={"count": "Denial Count", "denial_reason_description": "Reason", "total_denied_amount": "$ Denied"},
         )
         fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis={"categoryorder": "total ascending"})
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Denial & Clean Claim trends
     col_left2, col_right2 = st.columns(2)
@@ -1336,7 +1336,7 @@ with tab3:
             y=10, line_dash="dash", line_color="#10B981", annotation_text="Target: 10%", annotation_font_color="#10B981"
         )
         fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right2:
         st.subheader("Clean Claim Rate Trend")
@@ -1352,7 +1352,7 @@ with tab3:
             y=90, line_dash="dash", line_color="#10B981", annotation_text="Target: 90%", annotation_font_color="#10B981"
         )
         fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Charge lag
     col_left3, col_right3 = st.columns(2)
@@ -1370,7 +1370,7 @@ with tab3:
         )
         fig.update_traces(marker_line_width=0, opacity=0.9)
         fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right3:
         st.subheader("First-Pass Rate Trend")
@@ -1386,7 +1386,7 @@ with tab3:
             y=85, line_dash="dash", line_color="#10B981", annotation_text="Target: 85%", annotation_font_color="#10B981"
         )
         fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Denial details table
     with st.expander("Denial Reasons Detail Table"):
@@ -1400,7 +1400,7 @@ with tab3:
                 "recovery_rate",
             ]
         ].round(2)
-        st.dataframe(denial_detail_df, hide_index=True, width="stretch")
+        st.dataframe(denial_detail_df, hide_index=True, use_container_width=True)
 
     export_buttons(
         "claims_denials",
@@ -1449,7 +1449,7 @@ with tab3:
                 title="Dirty Claims by Fail Reason",
             )
             fig.update_layout(height=360, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with col_sc2:
             fig = px.pie(
@@ -1460,7 +1460,7 @@ with tab3:
                 color_discrete_sequence=RCM_COLORS,
             )
             fig.update_layout(height=360, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with st.expander("Scrubbing Detail & Resolution Guidance"):
             guidance_df = scrub_df[["label", "count", "total_charges", "pct_of_dirty", "guidance"]].copy().round(2)
@@ -1471,7 +1471,7 @@ with tab3:
                 "% of Dirty",
                 "Resolution Guidance",
             ]
-            st.dataframe(guidance_df, hide_index=True, width="stretch")
+            st.dataframe(guidance_df, hide_index=True, use_container_width=True)
             export_buttons("claim_scrubbing_breakdown", {"Scrubbing Breakdown": guidance_df})
 
 
@@ -1520,7 +1520,7 @@ with tab4:
         )
         fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", marker_line_width=0, opacity=0.92)
         fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False, plot_bgcolor="rgba(248,250,252,0.5)")
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right:
         st.subheader("A/R Aging Distribution")
@@ -1531,7 +1531,7 @@ with tab4:
             color_discrete_sequence=["#10B981", "#F59E0B", "#F97316", "#EF4444", "#991B1B"],
         )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # DAR trend
     st.subheader("Days in A/R Trend")
@@ -1566,7 +1566,7 @@ with tab4:
     fig.update_layout(height=400, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
     fig.update_yaxes(title_text="A/R Balance ($)", secondary_y=False)
     fig.update_yaxes(title_text="Days in A/R", secondary_y=True)
-    st.plotly_chart(fig, theme="streamlit", width="stretch")
+    st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Cash flow
     st.subheader("Monthly Cash Flow")
@@ -1623,14 +1623,14 @@ with tab4:
         yaxis_title="Amount ($)",
         plot_bgcolor="rgba(248,250,252,0.5)",
     )
-    st.plotly_chart(fig, theme="streamlit", width="stretch")
+    st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # A/R aging table
     with st.expander("A/R Aging Detail"):
         aging_detail = aging_df.copy()
         aging_detail["Total A/R"] = aging_detail["Total A/R"].apply(lambda x: f"${x:,.2f}")
         aging_detail["% of Total"] = aging_detail["% of Total"].apply(lambda x: f"{x:.1f}%")
-        st.dataframe(aging_detail, hide_index=True, width="stretch")
+        st.dataframe(aging_detail, hide_index=True, use_container_width=True)
 
     export_buttons(
         "ar_aging_cashflow",
@@ -1672,13 +1672,13 @@ with tab5:
             labels={"payer_name": "Payer", "total_payments": "Total Payments ($)", "payer_type": "Type"},
         )
         fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right:
         st.subheader("Payer Mix (by Volume)")
         fig = px.pie(payer_mix, values="claim_count", names="payer_name", color_discrete_sequence=RCM_COLORS)
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Collection rate by payer
     col_left2, col_right2 = st.columns(2)
@@ -1694,7 +1694,7 @@ with tab5:
             labels={"collection_rate": "Collection Rate (%)", "payer_name": "Payer"},
         )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right2:
         st.subheader("Denial Rate by Payer")
@@ -1708,7 +1708,7 @@ with tab5:
             labels={"denial_rate": "Denial Rate (%)", "payer_name": "Payer"},
         )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Payer comparison table
     st.subheader("Payer Comparison Table")
@@ -1724,7 +1724,7 @@ with tab5:
         "Collection Rate (%)",
         "Denial Rate (%)",
     ]
-    st.dataframe(payer_table, hide_index=True, width="stretch")
+    st.dataframe(payer_table, hide_index=True, use_container_width=True)
 
     export_buttons(
         "payer_analysis",
@@ -1756,7 +1756,7 @@ with tab5:
         labels={"value": "Amount ($)", "payer_type": "Payer Type", "variable": "Metric"},
     )
     fig.update_layout(height=350, margin=dict(t=30, b=30))
-    st.plotly_chart(fig, theme="streamlit", width="stretch")
+    st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # ── Payer Drill-Down ──────────────────────────────────────────────
     st.divider()
@@ -1792,7 +1792,7 @@ with tab5:
                 color_discrete_sequence=RCM_COLORS,
             )
             fig.update_layout(height=300, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
         with col_d2:
             if not drill_denials.empty:
                 denial_reasons_drill = drill_denials["denial_reason_description"].value_counts().reset_index()
@@ -1806,7 +1806,7 @@ with tab5:
                     labels={"Count": "# Denials", "Reason": ""},
                 )
                 fig.update_layout(height=300, margin=dict(t=40, b=10), yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
             else:
                 st.info("No denials for this payer in the selected date range.")
 
@@ -1833,7 +1833,7 @@ with tab5:
                 "Clean Claim",
                 "Payment Amount",
             ]
-            st.dataframe(claim_detail, hide_index=True, width="stretch")
+            st.dataframe(claim_detail, hide_index=True, use_container_width=True)
             export_buttons(
                 f"payer_drilldown_{selected_drilldown_payer.replace(' ', '_')}",
                 {
@@ -1873,7 +1873,7 @@ with tab6:
             labels={"value": "Amount ($)", "department": "Department", "variable": "Metric"},
         )
         fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right:
         st.subheader("Collection Rate by Department")
@@ -1887,7 +1887,7 @@ with tab6:
             labels={"collection_rate": "Collection Rate (%)", "department": "Department"},
         )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Encounter volume by department
     col_left2, col_right2 = st.columns(2)
@@ -1895,7 +1895,7 @@ with tab6:
         st.subheader("Encounter Volume by Department")
         fig = px.pie(dept_perf, values="encounter_count", names="department", color_discrete_sequence=RCM_COLORS)
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right2:
         st.subheader("Avg Payment per Encounter")
@@ -1909,7 +1909,7 @@ with tab6:
             labels={"avg_payment_per_encounter": "Avg $/Encounter", "department": "Department"},
         )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Department encounter type breakdown
     st.subheader("Encounter Type by Department")
@@ -1923,7 +1923,7 @@ with tab6:
         labels={"count": "Count", "department": "Department", "encounter_type": "Type"},
     )
     fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
-    st.plotly_chart(fig, theme="streamlit", width="stretch")
+    st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     # Department table
     st.subheader("Department Performance Summary")
@@ -1940,7 +1940,7 @@ with tab6:
         "Collection Rate",
         "Avg $/Encounter",
     ]
-    st.dataframe(dept_table, hide_index=True, width="stretch")
+    st.dataframe(dept_table, hide_index=True, use_container_width=True)
     export_buttons(
         "department_performance",
         {
@@ -1983,7 +1983,7 @@ with tab6:
                 color_discrete_sequence=RCM_COLORS,
             )
             fig.update_layout(height=300, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
         with col_dd2:
             status_counts_dept = drill_dept_claims["claim_status"].value_counts().reset_index()
             status_counts_dept.columns = ["Status", "Count"]
@@ -1996,7 +1996,7 @@ with tab6:
                 color_discrete_sequence=RCM_COLORS,
             )
             fig.update_layout(height=300, margin=dict(t=40, b=10), showlegend=False)
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with st.expander("Encounter & Claim Detail"):
             enc_detail = drill_encs[
@@ -2021,7 +2021,7 @@ with tab6:
                 "Claim Status",
                 "Payment Amount",
             ]
-            st.dataframe(enc_detail, hide_index=True, width="stretch")
+            st.dataframe(enc_detail, hide_index=True, use_container_width=True)
             export_buttons(
                 f"dept_drilldown_{selected_drilldown_dept.replace(' ', '_')}",
                 {
@@ -2090,7 +2090,7 @@ with tab7:
                 title="Top 15 Providers by Collections",
             )
             fig.update_layout(height=450, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with col_p2:
             st.subheader("Denial Rate by Provider")
@@ -2112,7 +2112,7 @@ with tab7:
                 annotation_position="top right",
             )
             fig.update_layout(height=450, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         col_p3, col_p4 = st.columns(2)
         with col_p3:
@@ -2134,7 +2134,7 @@ with tab7:
                 annotation_position="top right",
             )
             fig.update_layout(height=450, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with col_p4:
             st.subheader("Avg Payment per Encounter")
@@ -2148,7 +2148,7 @@ with tab7:
                 labels={"avg_payment_per_encounter": "Avg Payment / Encounter ($)", "provider_name": ""},
             )
             fig.update_layout(height=450, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         # ── Provider Scorecard Table ──────────────────────────────────
         st.subheader("Provider Scorecard")
@@ -2182,7 +2182,7 @@ with tab7:
             "Denial Rate (%)",
             "Clean Claim Rate (%)",
         ]
-        st.dataframe(scorecard, hide_index=True, width="stretch")
+        st.dataframe(scorecard, hide_index=True, use_container_width=True)
         export_buttons("provider_performance", {"Provider Scorecard": scorecard})
 
         # ── Provider Drill-Down ───────────────────────────────────────
@@ -2226,7 +2226,7 @@ with tab7:
                     color_discrete_sequence=RCM_COLORS,
                 )
                 fig.update_layout(height=300, margin=dict(t=40, b=10))
-                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
             with col_pd2:
                 if not drill_prov_denials.empty:
                     denial_reasons_prov = drill_prov_denials["denial_reason_description"].value_counts().reset_index()
@@ -2240,7 +2240,7 @@ with tab7:
                         labels={"Count": "# Denials", "Reason": ""},
                     )
                     fig.update_layout(height=300, margin=dict(t=40, b=10), yaxis={"categoryorder": "total ascending"})
-                    st.plotly_chart(fig, theme="streamlit", width="stretch")
+                    st.plotly_chart(fig, theme="streamlit", use_container_width=True)
                 else:
                     st.info("No denials for this provider in the selected date range.")
 
@@ -2297,7 +2297,7 @@ with tab8:
                 title="Top 15 CPT Codes (color = denial rate)",
             )
             fig.update_layout(height=450, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with col_c2:
             st.subheader("Top CPT Codes by Denial Rate")
@@ -2315,7 +2315,7 @@ with tab8:
             )
             fig.add_vline(x=10, line_dash="dash", line_color="#F59E0B", annotation_text="10% benchmark")
             fig.update_layout(height=450, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         col_c3, col_c4 = st.columns(2)
         with col_c3:
@@ -2328,7 +2328,7 @@ with tab8:
                 color_discrete_sequence=RCM_COLORS,
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with col_c4:
             st.subheader("Avg Charge per Unit by CPT Code")
@@ -2343,7 +2343,7 @@ with tab8:
                 title="Top 15 CPT Codes by Avg Charge per Unit",
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         # ── CPT Detail Table ──────────────────────────────────────────
         st.subheader("CPT Code Detail")
@@ -2375,7 +2375,7 @@ with tab8:
             "Denied Claims",
             "Denial Rate (%)",
         ]
-        st.dataframe(cpt_table, hide_index=True, width="stretch")
+        st.dataframe(cpt_table, hide_index=True, use_container_width=True)
         export_buttons("cpt_code_analysis", {"CPT Code Analysis": cpt_table})
 
 
@@ -2435,7 +2435,7 @@ with tab9:
                 title="Total Underpayments by Payer (color = rate)",
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with col_u2:
             st.subheader("Underpayment Rate by Payer")
@@ -2454,7 +2454,7 @@ with tab9:
                 title="Underpayment Rate by Payer (color = dollar amount)",
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         # ── Monthly Trend ─────────────────────────────────────────────
         if not underpay_trend.empty:
@@ -2477,7 +2477,7 @@ with tab9:
                     xaxis_title="Month",
                     title="Monthly Underpayment Dollars",
                 )
-                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
             with col_u4:
                 fig = go.Figure()
                 fig.add_trace(
@@ -2503,7 +2503,7 @@ with tab9:
                     xaxis_title="Month",
                     title="Monthly Underpayment Rate",
                 )
-                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         # ── Allowed vs. Paid Waterfall ────────────────────────────────
         st.subheader("Allowed vs. Paid vs. Underpaid — by Payer")
@@ -2529,7 +2529,7 @@ with tab9:
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
             xaxis_tickangle=-30,
         )
-        st.plotly_chart(fig, theme="streamlit", width="stretch")
+        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         # ── Underpayment Detail Table ─────────────────────────────────
         st.subheader("Underpayment Summary by Payer")
@@ -2559,7 +2559,7 @@ with tab9:
             "Underpaid Claims",
             "Underpayment Rate (%)",
         ]
-        st.dataframe(underpay_table, hide_index=True, width="stretch")
+        st.dataframe(underpay_table, hide_index=True, use_container_width=True)
         export_buttons("underpayment_analysis", {"Underpayment by Payer": underpay_table})
 
 
@@ -2669,7 +2669,7 @@ with tab10:
                 xaxis_title="Month",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02),
             )
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
             if cf_anomalies["count"] > 0:
                 anom_list = ", ".join(f"{a[0]} (${a[1]:,.0f})" for a in cf_anomalies["anomalies"])
@@ -2750,7 +2750,7 @@ with tab10:
                     )
                 fig.add_hline(y=35, line_dash="dash", line_color="green", annotation_text="35-day benchmark")
                 fig.update_layout(height=340, margin=dict(t=40, b=10), yaxis_title="Days in A/R", xaxis_title="Month")
-                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
                 if dar_anomalies["count"] > 0:
                     anom_list = ", ".join(f"{a[0]} ({a[1]:.1f} days)" for a in dar_anomalies["anomalies"])
                     st.warning(f"**{dar_anomalies['count']} anomalous month(s) excluded:** {anom_list}")
@@ -2826,7 +2826,7 @@ with tab10:
                 fig.update_layout(
                     height=340, margin=dict(t=40, b=10), yaxis_title="Denial Rate (%)", xaxis_title="Month"
                 )
-                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
                 if dr_anomalies["count"] > 0:
                     anom_list = ", ".join(f"{a[0]} ({a[1]:.1f}%)" for a in dr_anomalies["anomalies"])
                     st.warning(f"**{dr_anomalies['count']} anomalous month(s) excluded:** {anom_list}")
@@ -3027,7 +3027,7 @@ with tab11:
                 title="Total Patient Responsibility by Payer (color = % of allowed)",
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with col_pr2:
             st.subheader("Patient Responsibility Rate by Payer Type")
@@ -3056,7 +3056,7 @@ with tab11:
             )
             fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
             fig.update_layout(height=400, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         # ── Monthly Trend ─────────────────────────────────────────────
         if not pr_trend.empty:
@@ -3079,7 +3079,7 @@ with tab11:
                     xaxis_title="Month",
                     title="Monthly Patient Responsibility ($)",
                 )
-                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
             with col_pr4:
                 fig = go.Figure()
                 fig.add_trace(
@@ -3100,7 +3100,7 @@ with tab11:
                     xaxis_title="Month",
                     title="Patient Responsibility Rate (% of Allowed)",
                 )
-                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         # ── Department / Encounter Type Breakdown ─────────────────────
         st.subheader("Patient Responsibility by Department & Encounter Type")
@@ -3118,7 +3118,7 @@ with tab11:
                 title="Total Patient Responsibility by Department",
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with col_pr6:
             enc_total = pr_dept.groupby("encounter_type")["total_patient_resp"].sum().reset_index()
@@ -3130,7 +3130,7 @@ with tab11:
                 color_discrete_sequence=RCM_COLORS,
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
-            st.plotly_chart(fig, theme="streamlit", width="stretch")
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         # ── Summary Table ─────────────────────────────────────────────
         st.subheader("Patient Responsibility by Payer — Detail")
@@ -3156,7 +3156,7 @@ with tab11:
             "Avg per Claim ($)",
             "% of Allowed",
         ]
-        st.dataframe(pr_table, hide_index=True, width="stretch")
+        st.dataframe(pr_table, hide_index=True, use_container_width=True)
         export_buttons("patient_responsibility", {"Patient Responsibility": pr_table})
 
 
