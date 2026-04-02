@@ -1,0 +1,8 @@
+name: rcm_analytics
+channels:
+  - snowflake
+dependencies:
+  - plotly
+  - pandas
+  - numpy
+  - openpyxl
