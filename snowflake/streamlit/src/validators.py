@@ -242,7 +242,11 @@ def validate_no_null_primary_keys():
 
 
 def run_all_validators():
-    """Run all validators and return a list of (name, passed, description) tuples."""
+    """Run all validators and return a list of issue dicts (only failures).
+
+    Each issue dict has keys: level, table, message.
+    Returns an empty list if all checks pass.
+    """
     validators = [
         validate_payers_not_empty,
         validate_patients_not_empty,
@@ -270,11 +274,26 @@ def run_all_validators():
         validate_payment_accuracy_boolean,
         validate_no_null_primary_keys,
     ]
-    results = []
+    issues = []
     for fn in validators:
         try:
             passed = fn()
-            results.append((fn.__name__, passed, fn.__doc__ or ""))
+            if not passed:
+                # Extract table name from function name (validate_X_not_empty -> X)
+                name = fn.__name__.replace("validate_", "")
+                issues.append(
+                    {
+                        "level": "error",
+                        "table": name,
+                        "message": fn.__doc__ or f"Validation failed: {fn.__name__}",
+                    }
+                )
         except Exception as e:
-            results.append((fn.__name__, False, f"Error: {str(e)}"))
-    return results
+            issues.append(
+                {
+                    "level": "warning",
+                    "table": fn.__name__,
+                    "message": f"Check error: {str(e)}",
+                }
+            )
+    return issues

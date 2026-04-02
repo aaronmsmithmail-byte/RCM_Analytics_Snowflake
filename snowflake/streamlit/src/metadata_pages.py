@@ -129,8 +129,9 @@ class _SubgraphContext:
 
 def _new_digraph(name="G", **kwargs):
     """Create a Digraph using graphviz library if available, else use _DotBuilder."""
+    fmt = kwargs.pop("format", "svg")
     if _HAS_GRAPHVIZ:
-        dot = graphviz.Digraph(name, format="svg")
+        dot = graphviz.Digraph(name, format=fmt)
         for k, v in kwargs.items():
             dot.attr(**{k: v})
         return dot
@@ -162,7 +163,9 @@ def _query_meta(sql: str) -> pd.DataFrame:
         from snowflake.snowpark.context import get_active_session
 
         session = get_active_session()
-        return session.sql(sql).to_pandas()
+        df = session.sql(sql).to_pandas()
+        df.columns = [c.lower() for c in df.columns]
+        return df
     except Exception:
         return pd.DataFrame()
 
@@ -1087,7 +1090,7 @@ def render_data_lineage():
     if _ss_fallback:
         _unique_ss = {"Source Systems": "ss_Source_Systems"}
 
-    dot = graphviz.Digraph("lineage", format="svg")
+    dot = _new_digraph("lineage", format="svg")
     dot.attr(rankdir="LR", bgcolor="white", fontname="Helvetica", nodesep="0.25", ranksep="1.2", splines="polyline")
     dot.attr("node", fontname="Helvetica", fontsize="10", style="filled", penwidth="1.5")
     dot.attr("edge", arrowsize="0.7", color="#888888")
@@ -1398,7 +1401,7 @@ def render_knowledge_graph():
         "Operational": {"nodes": ["operating_costs"], "color": "#fef3c7", "border": "#e8a838", "fontcolor": "#92400e"},
     }
 
-    dot = graphviz.Digraph("kg", format="svg")
+    dot = _new_digraph("kg", format="svg")
     dot.attr(
         rankdir="TB",
         bgcolor="white",
@@ -1519,7 +1522,7 @@ def render_semantic_layer():
         "Operational": {"color": "#78716c", "bg": "#fafaf9", "kpis": ["Data Freshness"]},
     }
 
-    dot = graphviz.Digraph("semantic", format="svg")
+    dot = _new_digraph("semantic", format="svg")
     dot.attr(rankdir="TB", bgcolor="white", fontname="Helvetica", nodesep="0.4", ranksep="0.6", splines="polyline")
     dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded", penwidth="1.5")
     dot.attr("edge", arrowsize="0.7", penwidth="1.2")
@@ -1640,7 +1643,7 @@ Every AI response follows a **three-stage pipeline**:
     # ── Process flow diagram ──────────────────────────────────────────
     st.subheader("Process Flow Diagram")
 
-    dot = graphviz.Digraph("ai_arch", format="svg")
+    dot = _new_digraph("ai_arch", format="svg")
     dot.attr(
         rankdir="TB",
         bgcolor="white",
@@ -2199,7 +2202,7 @@ def render_business_processes():
     _GRAY = "#e0e0e0"  # Terminal / write-off
     _TEAL = "#b2dfdb"  # Reporting / analytics
 
-    dot = graphviz.Digraph("rcm_process", format="svg")
+    dot = _new_digraph("rcm_process", format="svg")
     dot.attr(
         rankdir="TB",
         bgcolor="white",
