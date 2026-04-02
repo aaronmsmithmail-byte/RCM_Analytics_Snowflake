@@ -135,10 +135,13 @@ USE ROLE SYSADMIN;
 USE DATABASE RCM_ANALYTICS;
 USE SCHEMA STAGING;
 
--- 4a. Create Bronze→Silver stored procedure
+-- 4a. Create Stage→Bronze stored procedure (loads all 10 CSVs)
+EXECUTE IMMEDIATE FROM @RCM_ANALYTICS.STAGING.RCM_REPO/branches/main/snowflake/etl/load_stage_to_bronze.sql;
+
+-- 4b. Create Bronze→Silver stored procedure
 EXECUTE IMMEDIATE FROM @RCM_ANALYTICS.STAGING.RCM_REPO/branches/main/snowflake/etl/transform_bronze_to_silver.sql;
 
--- 4b. Create daily ETL task (runs at 6 AM ET)
+-- 4c. Create daily ETL task (runs at 6 AM ET)
 EXECUTE IMMEDIATE FROM @RCM_ANALYTICS.STAGING.RCM_REPO/branches/main/snowflake/etl/tasks.sql;
 
 
@@ -167,7 +170,7 @@ USE DATABASE RCM_ANALYTICS;
 USE SCHEMA STAGING;
 
 -- 5a. Load CSVs from stage into Bronze tables
-EXECUTE IMMEDIATE FROM @RCM_ANALYTICS.STAGING.RCM_REPO/branches/main/snowflake/etl/load_stage_to_bronze.sql;
+CALL RCM_ANALYTICS.STAGING.SP_LOAD_STAGE_TO_BRONZE();
 
 -- 5b. Run Bronze→Silver ETL
 CALL RCM_ANALYTICS.STAGING.SP_BRONZE_TO_SILVER();
