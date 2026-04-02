@@ -15,11 +15,9 @@ EXECUTE AS CALLER
 AS
 $$
 BEGIN
-    -- Note: COPY INTO is idempotent when files haven't changed (Snowflake
-    -- tracks loaded files). For a full refresh, run load_stage_to_bronze.sql
-    -- manually first, then this procedure handles bronze → silver.
+    CALL SP_LOAD_STAGE_TO_BRONZE();
     CALL SP_BRONZE_TO_SILVER();
-    RETURN 'Full ETL pipeline completed successfully';
+    RETURN 'Full ETL pipeline completed successfully (stage → bronze → silver)';
 END;
 $$;
 
@@ -27,7 +25,7 @@ $$;
 CREATE OR REPLACE TASK DAILY_ETL_TASK
     WAREHOUSE = RCM_WH
     SCHEDULE = 'USING CRON 0 6 * * * America/New_York'
-    COMMENT = 'Daily ETL: refresh Silver layer from Bronze data'
+    COMMENT = 'Daily ETL: reload stage → bronze → silver'
 AS
     CALL SP_FULL_ETL();
 

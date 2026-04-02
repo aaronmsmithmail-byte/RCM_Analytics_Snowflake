@@ -31,35 +31,48 @@ The **AI Assistant** tab uses Snowflake **Cortex Analyst** — ask natural-langu
 
 ## Requirements
 
-- Python 3.9+
-- pip
+- A Snowflake account (free trial works — [signup](https://signup.snowflake.com/))
+- Python 3.9+ (for generating sample CSV data locally)
+- A GitHub account with a Personal Access Token (for Snowflake Git integration)
 
 ---
 
 ## Setup
 
-### 1. Clone the repository
+### Quick Start (Recommended)
+
+The fastest way to deploy is using the **comprehensive setup script** and Snowflake's native Git integration:
+
+1. **Generate a GitHub Personal Access Token:**
+   - Go to GitHub > Settings > Developer settings > Personal access tokens > Fine-grained tokens
+   - Create a token with **Contents: Read-only** permission on this repository
+
+2. **Open `snowflake/setup/full_setup.sql` in Snowsight** (or copy from the repo)
+
+3. **Replace the two placeholders** (your GitHub username and PAT)
+
+4. **Run each numbered section in order** (9 sections, ~10 minutes total)
+
+The setup script handles everything: database/schemas/warehouse creation, Git repo connection, DDL deployment, ETL pipeline, metadata seeding, Horizon catalog, and Cortex Analyst model staging.
+
+### Manual Setup (Step by Step)
+
+If you prefer to run each step manually:
+
+#### 1. Clone the repository
 
 ```bash
-git clone <repo-url>
-cd RCM_Analytics_test
+git clone https://github.com/aaronmsmithmail-byte/RCM_Analytics_Snowflake.git
+cd RCM_Analytics_Snowflake
 ```
 
-### 2. Create and activate a virtual environment (recommended)
-
-```bash
-python -m venv venv
-source venv/bin/activate        # macOS / Linux
-venv\Scripts\activate           # Windows
-```
-
-### 3. Install dependencies
+#### 2. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Generate sample data
+#### 3. Generate sample data
 
 ```bash
 python generate_sample_data.py
