@@ -1,6 +1,6 @@
 # Healthcare RCM Analytics Dashboard
 
-A comprehensive Streamlit web application for monitoring and analyzing Healthcare Revenue Cycle Management (RCM) KPIs and metrics, built on a production-grade medallion data architecture.
+A comprehensive Streamlit in Snowflake (SiS) application for monitoring and analyzing Healthcare Revenue Cycle Management (RCM) KPIs and metrics, built on a Snowflake-native medallion data architecture with Cortex Analyst AI.
 
 ## Overview
 
@@ -25,7 +25,7 @@ This dashboard provides healthcare organizations with interactive visualizations
 
 Every data tab includes **CSV and Excel export buttons**. A **KPI alert system** in the sidebar flags threshold breaches in real time, and a **data pipeline freshness panel** shows the last ETL run time and status for each of the 10 data domains.
 
-The **AI Assistant** tab uses an agentic tool-calling loop: the model can call `run_sql()` to execute live SELECT queries against the DuckDB database, receive the results, and weave them into its answer — all within a single conversational turn.  Requires a free [OpenRouter](https://openrouter.ai/keys) API key.
+The **AI Assistant** tab uses Snowflake **Cortex Analyst** — ask natural-language questions and Cortex generates and executes SQL queries against the Silver layer using the staged semantic model YAML. No external API keys required.
 
 ---
 
@@ -80,43 +80,44 @@ This creates 10 CSV files in the `data/` directory covering Jan 2024 – Dec 202
 | `adjustments.csv` | 600 | Billing System | Contractual, writeoff, and charity adjustments |
 | `operating_costs.csv` | 24 | ERP / Finance | Monthly RCM operational costs |
 
-On first launch, the app automatically loads these CSVs into a local DuckDB database using the medallion pipeline (Bronze → Silver → Gold). No manual database setup is required.
+Upload these CSVs to the Snowflake internal stage `@RCM_ANALYTICS.STAGING.RCM_STAGE` via Snowsight UI or SnowSQL, then run the ETL stored procedure to load them through the medallion pipeline (Bronze → Silver → Gold).
 
-> **Schema migration:** If you regenerate sample data after a previous run, the app detects the schema version automatically and rebuilds all three medallion layers cleanly.
-
-### 5. (Optional) Create a local configuration file
-
-Copy the provided example to create your own `.env`:
+### 5. Deploy to Snowflake
 
 ```bash
-cp .env.example .env
-```
+# Run DDL scripts to create all Snowflake objects
+snow sql -f snowflake/setup/00_environment.sql
+snow sql -f snowflake/ddl/01_bronze_tables.sql
+snow sql -f snowflake/ddl/02_silver_tables.sql
+snow sql -f snowflake/ddl/03_gold_views.sql
+snow sql -f snowflake/ddl/04_metadata_tables.sql
+snow sql -f snowflake/ddl/05_stages.sql
 
-Then open `.env` and fill in any values you want to override.  At minimum, set `OPENROUTER_API_KEY` to enable the AI Assistant tab — all other variables have sensible defaults and can be left commented out.
+# Upload CSVs to stage (via SnowSQL)
+PUT file:///path/to/data/*.csv @RCM_ANALYTICS.STAGING.RCM_STAGE;
 
-```
-OPENROUTER_API_KEY=your_key_here   # get a free key at openrouter.ai/keys
-```
+# Run ETL
+snow sql -f snowflake/etl/load_stage_to_bronze.sql
+snow sql -q "CALL RCM_ANALYTICS.STAGING.SP_BRONZE_TO_SILVER();"
 
-The `.env` file is listed in `.gitignore` and will never be committed.  See the [Configuration Reference](#configuration-reference) section below for all available variables.
+# Seed metadata and catalog
+snow sql -f snowflake/etl/seed_metadata.sql
+snow sql -f snowflake/catalog/tags_and_comments.sql
+
+# Stage Cortex Analyst semantic model
+PUT file:///path/to/snowflake/cortex/rcm_semantic_model.yaml @RCM_ANALYTICS.STAGING.RCM_STAGE/cortex/ AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
+```
 
 ### 6. Run the dashboard
 
-**One-command startup (recommended):**
+Deploy the Streamlit app in Snowflake via Snowsight:
+1. Go to Snowsight → Projects → Streamlit
+2. Create new Streamlit app from `snowflake/streamlit/rcm_dashboard.py`
+3. Set warehouse to `RCM_WH` and database to `RCM_ANALYTICS`
 
+Or via Snowflake CLI:
 ```bash
-./start.sh           # Full stack: venv + deps + data + Docker + Streamlit
-./start.sh --local   # Streamlit only (no Docker, DuckDB fallback)
-```
-
-The script handles everything: creates/activates the virtual environment, installs dependencies, generates sample data if needed, starts Docker services (Cube + Neo4j) if available, and launches Streamlit.
-
-**Or run each step manually:**
-
-```bash
-source venv/bin/activate
-pip install -r requirements.txt
-python generate_sample_data.py
+cd snowflake/streamlit && snow streamlit deploy --replace
 streamlit run app.py
 ```
 

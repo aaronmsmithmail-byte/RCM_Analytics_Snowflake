@@ -1,0 +1,165 @@
+name: Deploy to Snowflake
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'snowflake/**'
+      - '.github/workflows/deploy-snowflake.yml'
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate sample data
+        run: python generate_sample_data.py
+
+      - name: Lint
+        run: ruff check snowflake/streamlit/ generate_sample_data.py
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  deploy-ddl:
+    name: Deploy DDL & ETL
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    environment: snowflake-prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        uses: Snowflake-Labs/snowflake-cli-action@v1
+        with:
+          cli-version: "latest"
+          default-config-file-path: "snowflake.yml"
+
+      - name: Configure Snowflake connection
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/config.toml << EOF
+          [connections.default]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
+          database = "RCM_ANALYTICS"
+          schema = "STAGING"
+          warehouse = "RCM_WH"
+          role = "SYSADMIN"
+          EOF
+
+      - name: Deploy environment setup
+        run: snow sql -f snowflake/setup/00_environment.sql
+
+      - name: Deploy Bronze DDL
+        run: snow sql -f snowflake/ddl/01_bronze_tables.sql
+
+      - name: Deploy Silver DDL
+        run: snow sql -f snowflake/ddl/02_silver_tables.sql
+
+      - name: Deploy Gold views
+        run: snow sql -f snowflake/ddl/03_gold_views.sql
+
+      - name: Deploy Metadata tables
+        run: snow sql -f snowflake/ddl/04_metadata_tables.sql
+
+      - name: Deploy Stages
+        run: snow sql -f snowflake/ddl/05_stages.sql
+
+      - name: Deploy ETL stored procedures
+        run: snow sql -f snowflake/etl/transform_bronze_to_silver.sql
+
+      - name: Deploy Task scheduling
+        run: snow sql -f snowflake/etl/tasks.sql
+
+      - name: Seed metadata
+        run: snow sql -f snowflake/etl/seed_metadata.sql
+
+      - name: Deploy Horizon catalog
+        run: snow sql -f snowflake/catalog/tags_and_comments.sql
+
+  deploy-cortex-model:
+    name: Deploy Cortex Analyst Model
+    needs: deploy-ddl
+    runs-on: ubuntu-latest
+    environment: snowflake-prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        uses: Snowflake-Labs/snowflake-cli-action@v1
+        with:
+          cli-version: "latest"
+
+      - name: Configure Snowflake connection
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/config.toml << EOF
+          [connections.default]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
+          database = "RCM_ANALYTICS"
+          schema = "STAGING"
+          warehouse = "RCM_WH"
+          role = "SYSADMIN"
+          EOF
+
+      - name: Stage Cortex Analyst semantic model
+        run: |
+          snow stage copy snowflake/cortex/rcm_semantic_model.yaml \
+            @RCM_ANALYTICS.STAGING.RCM_STAGE/cortex/ \
+            --overwrite
+
+  deploy-streamlit:
+    name: Deploy Streamlit App
+    needs: deploy-ddl
+    runs-on: ubuntu-latest
+    environment: snowflake-prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        uses: Snowflake-Labs/snowflake-cli-action@v1
+        with:
+          cli-version: "latest"
+
+      - name: Configure Snowflake connection
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/config.toml << EOF
+          [connections.default]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
+          database = "RCM_ANALYTICS"
+          schema = "STAGING"
+          warehouse = "RCM_WH"
+          role = "SYSADMIN"
+          EOF
+
+      - name: Deploy Streamlit app
+        run: |
+          cd snowflake/streamlit
+          snow streamlit deploy \
+            --replace \
+            --database RCM_ANALYTICS \
+            --schema STAGING \
+            --warehouse RCM_WH

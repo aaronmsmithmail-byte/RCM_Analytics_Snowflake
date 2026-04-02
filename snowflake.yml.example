@@ -1,0 +1,30 @@
+# Snowflake CLI Connection Configuration
+# ========================================
+# Copy this file to snowflake.yml and fill in your account details.
+# Do NOT commit snowflake.yml — it contains account-specific configuration.
+#
+# See: https://docs.snowflake.com/en/developer-guide/snowflake-cli/connecting
+
+default_connection_name: "dev"
+
+connections:
+  dev:
+    # Your Snowflake account identifier (e.g., xy12345.us-east-1)
+    account: "<account_identifier>"
+    # Your Snowflake username
+    user: "<username>"
+    # Authentication method (recommended: key-pair for CI/CD)
+    # Options: SNOWFLAKE (password), SNOWFLAKE_JWT (key-pair), EXTERNALBROWSER (SSO)
+    authenticator: "SNOWFLAKE"
+    # Password (for SNOWFLAKE authenticator only — prefer key-pair for automation)
+    # password: "<password>"
+    # Private key file path (for SNOWFLAKE_JWT authenticator)
+    # private_key_file: "~/.snowflake/rsa_key.p8"
+    # Default database
+    database: "RCM_ANALYTICS"
+    # Default schema
+    schema: "STAGING"
+    # Default warehouse
+    warehouse: "RCM_WH"
+    # Default role
+    role: "SYSADMIN"

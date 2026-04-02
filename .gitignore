@@ -13,3 +13,5 @@ __pycache__/
 .env
 .env.local
 .env.*.local
+# Snowflake CLI connection config (contains account-specific details)
+snowflake.yml
