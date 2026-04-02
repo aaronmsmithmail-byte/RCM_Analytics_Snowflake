@@ -978,25 +978,19 @@ def render_data_catalog():
     st.subheader("KPI Metrics Catalog")
 
     raw = _query_meta("""
-        SELECT metric_name  AS "Metric",
-               category     AS "Category",
-               definition   AS "Definition",
-               formula      AS "Formula",
-               COALESCE(benchmark, '—') AS "Benchmark"
+        SELECT metric_name,
+               category,
+               definition,
+               formula,
+               COALESCE(benchmark, '—') AS benchmark
         FROM   RCM_ANALYTICS.METADATA.KPI_CATALOG
         ORDER  BY category, metric_name
     """)
     if raw.empty:
         # Fallback to static list when DB isn't ready
-        raw = pd.DataFrame(_KPI_CATALOG_FALLBACK).rename(
-            columns={
-                "Metric": "Metric",
-                "Category": "Category",
-                "Definition": "Definition",
-                "Formula": "Formula",
-            }
-        )
-        raw["Benchmark"] = "—"
+        raw = pd.DataFrame(_KPI_CATALOG_FALLBACK)
+        raw.columns = [c.lower() for c in raw.columns]
+        raw["benchmark"] = "—"
         st.info("Live DB unavailable — showing static fallback catalog.")
 
     total = len(raw)
@@ -1004,19 +998,19 @@ def render_data_catalog():
     with col1:
         search = st.text_input("Search metrics", placeholder="e.g. denial, collection, days...")
     with col2:
-        categories = ["All"] + sorted(raw["Category"].dropna().unique().tolist())
+        categories = ["All"] + sorted(raw["category"].dropna().unique().tolist())
         cat_filter = st.selectbox("Category", categories)
 
     df = raw.copy()
     if search:
         mask = (
-            df["Metric"].str.contains(search, case=False, na=False)
-            | df["Definition"].str.contains(search, case=False, na=False)
-            | df["Formula"].str.contains(search, case=False, na=False)
+            df["metric_name"].str.contains(search, case=False, na=False)
+            | df["definition"].str.contains(search, case=False, na=False)
+            | df["formula"].str.contains(search, case=False, na=False)
         )
         df = df[mask]
     if cat_filter != "All":
-        df = df[df["Category"] == cat_filter]
+        df = df[df["category"] == cat_filter]
 
     st.dataframe(df, use_container_width=True)
     st.caption(f"{len(df)} of {total} metrics shown")
@@ -1462,11 +1456,11 @@ def render_knowledge_graph():
     # ── Relationships table ─────────────────────────────────────────────
     st.subheader("Relationships")
     rel_df = _query_meta("""
-            SELECT parent_entity   AS "Parent Table",
-                   child_entity    AS "Child Table",
-                   join_column     AS "Join Column",
-                   cardinality     AS "Cardinality",
-                   business_meaning AS "Business Meaning"
+            SELECT parent_entity,
+                   child_entity,
+                   join_column,
+                   cardinality,
+                   business_meaning
             FROM   RCM_ANALYTICS.METADATA.KG_EDGES
             ORDER  BY parent_entity, child_entity
     """)
@@ -1557,11 +1551,11 @@ def render_semantic_layer():
     # ── Semantic mapping table from Snowflake ─────────────────────────
     st.subheader("Semantic Mapping")
     sem_df = _query_meta("""
-            SELECT business_concept AS "Business Concept",
-                   kpi_name         AS "KPI",
-                   silver_columns   AS "Silver Columns",
-                   formula          AS "Transformation",
-                   business_rule    AS "Business Rule"
+            SELECT business_concept,
+                   kpi_name,
+                   silver_columns,
+                   formula,
+                   business_rule
             FROM   RCM_ANALYTICS.METADATA.SEMANTIC_LAYER
             ORDER  BY business_concept, kpi_name
         """)
@@ -2503,19 +2497,109 @@ def render_business_processes():
 
 
 def render_feature_backlog():
-    """Feature backlog sourced from Snowflake METADATA.FEATURE_BACKLOG."""
-    st.title("Feature Backlog")
-    st.caption("Planned features and enhancements.")
+    """Feature backlog with add/edit/delete — persisted in Snowflake METADATA.FEATURE_BACKLOG."""
+    from snowflake.snowpark.context import get_active_session
 
+    session = get_active_session()
+
+    st.title("Feature Backlog")
+    st.caption(
+        "Track feature requests and enhancements. "
+        "Submit new ideas, set priorities, and update status as work progresses."
+    )
+
+    _PRIORITY_ICONS = {"Critical": "🔴", "High": "🟠", "Medium": "🟡", "Low": "🟢"}
+    _STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting for Review", "Completed"]
+    _PRIORITY_OPTIONS = ["Critical", "High", "Medium", "Low"]
+    _STATUS_ICONS = {"Not Started": "⬜", "In Progress": "🔵", "Waiting for Review": "🟣", "Completed": "✅"}
+
+    # Load current items
     df = _query_meta("""
-        SELECT TITLE, DESCRIPTION, PRIORITY, STATUS, CREATED_AT
+        SELECT *
         FROM RCM_ANALYTICS.METADATA.FEATURE_BACKLOG
         ORDER BY
-            CASE PRIORITY WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 ELSE 4 END,
+            CASE PRIORITY WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END,
             CREATED_AT DESC
     """)
-    if df.empty:
-        st.info("No backlog items found. Run seed_metadata.sql to populate.")
-        return
 
-    st.dataframe(df, use_container_width=True)
+    # Summary scorecards
+    total = len(df)
+    status_counts = df["status"].value_counts().to_dict() if total > 0 else {}
+    cols = st.columns(5)
+    with cols[0]:
+        st.metric("Total Items", total)
+    for i, status in enumerate(_STATUS_OPTIONS):
+        with cols[i + 1]:
+            st.metric(f"{_STATUS_ICONS[status]} {status}", status_counts.get(status, 0))
+
+    st.divider()
+
+    # Board view
+    st.subheader("Backlog Items")
+    if df.empty:
+        st.info("No backlog items yet. Use the form below to add your first feature request.")
+    else:
+        for _, row in df.iterrows():
+            p_icon = _PRIORITY_ICONS.get(row["priority"], "⚪")
+            s_icon = _STATUS_ICONS.get(row["status"], "⬜")
+            with st.expander(f"{p_icon} {row['title']}  —  {s_icon} {row['status']}", expanded=False):
+                col_status, col_delete = st.columns([3, 1])
+                with col_status:
+                    current_idx = _STATUS_OPTIONS.index(row["status"]) if row["status"] in _STATUS_OPTIONS else 0
+                    new_status = st.selectbox("Status", _STATUS_OPTIONS, index=current_idx, key=f"status_{row['id']}")
+                    if new_status != row["status"]:
+                        session.sql(
+                            f"UPDATE RCM_ANALYTICS.METADATA.FEATURE_BACKLOG SET STATUS = '{new_status}', UPDATED_AT = CURRENT_TIMESTAMP() WHERE ID = {row['id']}"
+                        ).collect()
+                        st.rerun()
+                with col_delete:
+                    st.markdown("")
+                    if st.button("🗑️ Delete", key=f"del_{row['id']}", type="secondary"):
+                        session.sql(
+                            f"DELETE FROM RCM_ANALYTICS.METADATA.FEATURE_BACKLOG WHERE ID = {row['id']}"
+                        ).collect()
+                        st.rerun()
+
+                st.markdown(f"**Priority:** {p_icon} {row['priority']}")
+                st.markdown(f"**Description:**  \n{row['description']}")
+                if row.get("acceptance_criteria"):
+                    st.markdown("**Acceptance Criteria:**")
+                    st.markdown(str(row["acceptance_criteria"]).replace("\\n", "\n"))
+                if row.get("benefits"):
+                    st.markdown(f"**Benefits:**  \n{row['benefits']}")
+                created = row.get("created_at", "")
+                if created:
+                    ts = pd.Timestamp(created)
+                    st.caption(f"Created: {ts.strftime('%b %d, %Y %I:%M %p')}")
+
+    st.divider()
+
+    # New item form
+    st.subheader("Submit New Feature Request")
+    with st.form("new_backlog_item", clear_on_submit=True):
+        title = st.text_input("Title *", placeholder="e.g. Automated denial appeal workflow")
+        description = st.text_area("Description *", placeholder="Describe the feature...", height=100)
+        col_p, _ = st.columns([1, 2])
+        with col_p:
+            priority = st.selectbox("Priority *", _PRIORITY_OPTIONS, index=2)
+        acceptance_criteria = st.text_area("Acceptance Criteria", placeholder="1. The system should...", height=100)
+        benefits = st.text_area("Benefits", placeholder="How this improves the workflow...", height=80)
+
+        submitted = st.form_submit_button("Submit Feature Request", type="primary")
+        if submitted:
+            if not title.strip() or not description.strip():
+                st.error("Title and Description are required.")
+            else:
+                t = title.strip().replace("'", "''")
+                d = description.strip().replace("'", "''")
+                ac = (acceptance_criteria.strip().replace("'", "''")) if acceptance_criteria.strip() else None
+                b = (benefits.strip().replace("'", "''")) if benefits.strip() else None
+                ac_val = f"'{ac}'" if ac else "NULL"
+                b_val = f"'{b}'" if b else "NULL"
+                session.sql(
+                    f"INSERT INTO RCM_ANALYTICS.METADATA.FEATURE_BACKLOG "
+                    f"(TITLE, DESCRIPTION, PRIORITY, ACCEPTANCE_CRITERIA, BENEFITS, STATUS) "
+                    f"VALUES ('{t}', '{d}', '{priority}', {ac_val}, {b_val}, 'Not Started')"
+                ).collect()
+                st.success(f'Feature request "{title.strip()}" submitted!')
+                st.rerun()
