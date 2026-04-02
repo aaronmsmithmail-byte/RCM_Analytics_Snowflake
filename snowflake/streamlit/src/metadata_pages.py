@@ -978,25 +978,19 @@ def render_data_catalog():
     st.subheader("KPI Metrics Catalog")
 
     raw = _query_meta("""
-        SELECT metric_name  AS "Metric",
-               category     AS "Category",
-               definition   AS "Definition",
-               formula      AS "Formula",
-               COALESCE(benchmark, '—') AS "Benchmark"
+        SELECT metric_name,
+               category,
+               definition,
+               formula,
+               COALESCE(benchmark, '—') AS benchmark
         FROM   RCM_ANALYTICS.METADATA.KPI_CATALOG
         ORDER  BY category, metric_name
     """)
     if raw.empty:
         # Fallback to static list when DB isn't ready
-        raw = pd.DataFrame(_KPI_CATALOG_FALLBACK).rename(
-            columns={
-                "Metric": "Metric",
-                "Category": "Category",
-                "Definition": "Definition",
-                "Formula": "Formula",
-            }
-        )
-        raw["Benchmark"] = "—"
+        raw = pd.DataFrame(_KPI_CATALOG_FALLBACK)
+        raw.columns = [c.lower() for c in raw.columns]
+        raw["benchmark"] = "—"
         st.info("Live DB unavailable — showing static fallback catalog.")
 
     total = len(raw)
@@ -1004,19 +998,19 @@ def render_data_catalog():
     with col1:
         search = st.text_input("Search metrics", placeholder="e.g. denial, collection, days...")
     with col2:
-        categories = ["All"] + sorted(raw["Category"].dropna().unique().tolist())
+        categories = ["All"] + sorted(raw["category"].dropna().unique().tolist())
         cat_filter = st.selectbox("Category", categories)
 
     df = raw.copy()
     if search:
         mask = (
-            df["Metric"].str.contains(search, case=False, na=False)
-            | df["Definition"].str.contains(search, case=False, na=False)
-            | df["Formula"].str.contains(search, case=False, na=False)
+            df["metric_name"].str.contains(search, case=False, na=False)
+            | df["definition"].str.contains(search, case=False, na=False)
+            | df["formula"].str.contains(search, case=False, na=False)
         )
         df = df[mask]
     if cat_filter != "All":
-        df = df[df["Category"] == cat_filter]
+        df = df[df["category"] == cat_filter]
 
     st.dataframe(df, use_container_width=True)
     st.caption(f"{len(df)} of {total} metrics shown")
@@ -1462,11 +1456,11 @@ def render_knowledge_graph():
     # ── Relationships table ─────────────────────────────────────────────
     st.subheader("Relationships")
     rel_df = _query_meta("""
-            SELECT parent_entity   AS "Parent Table",
-                   child_entity    AS "Child Table",
-                   join_column     AS "Join Column",
-                   cardinality     AS "Cardinality",
-                   business_meaning AS "Business Meaning"
+            SELECT parent_entity,
+                   child_entity,
+                   join_column,
+                   cardinality,
+                   business_meaning
             FROM   RCM_ANALYTICS.METADATA.KG_EDGES
             ORDER  BY parent_entity, child_entity
     """)
@@ -1557,11 +1551,11 @@ def render_semantic_layer():
     # ── Semantic mapping table from Snowflake ─────────────────────────
     st.subheader("Semantic Mapping")
     sem_df = _query_meta("""
-            SELECT business_concept AS "Business Concept",
-                   kpi_name         AS "KPI",
-                   silver_columns   AS "Silver Columns",
-                   formula          AS "Transformation",
-                   business_rule    AS "Business Rule"
+            SELECT business_concept,
+                   kpi_name,
+                   silver_columns,
+                   formula,
+                   business_rule
             FROM   RCM_ANALYTICS.METADATA.SEMANTIC_LAYER
             ORDER  BY business_concept, kpi_name
         """)
