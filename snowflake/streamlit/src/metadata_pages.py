@@ -668,17 +668,61 @@ def render_business_processes():
     st.subheader("Process to Snowflake Data Mapping")
     mapping = pd.DataFrame(
         [
-            {"Process Step": "Patient Scheduling", "Snowflake Table": "SILVER.ENCOUNTERS", "Key Fields": "encounter_type, department, date_of_service"},
-            {"Process Step": "Registration & Eligibility", "Snowflake Table": "SILVER.PATIENTS", "Key Fields": "patient_id, primary_payer_id, member_id"},
-            {"Process Step": "Medical Coding", "Snowflake Table": "SILVER.CHARGES", "Key Fields": "cpt_code, icd10_code, cpt_description"},
-            {"Process Step": "Charge Capture", "Snowflake Table": "SILVER.CHARGES", "Key Fields": "charge_amount, units, service_date, post_date"},
-            {"Process Step": "Claim Scrubbing", "Snowflake Table": "SILVER.CLAIMS", "Key Fields": "is_clean_claim, fail_reason"},
-            {"Process Step": "Claim Submission", "Snowflake Table": "SILVER.CLAIMS", "Key Fields": "submission_date, submission_method, claim_status"},
-            {"Process Step": "Payer Adjudication", "Snowflake Table": "SILVER.PAYMENTS", "Key Fields": "payment_amount, allowed_amount, payment_method"},
-            {"Process Step": "Denial Management", "Snowflake Table": "SILVER.DENIALS", "Key Fields": "denial_reason_code, denied_amount, denial_date"},
-            {"Process Step": "Appeals & Recovery", "Snowflake Table": "SILVER.DENIALS", "Key Fields": "appeal_status, appeal_date, recovered_amount"},
-            {"Process Step": "Patient Collections", "Snowflake Table": "SILVER.ADJUSTMENTS", "Key Fields": "adjustment_type_code, adjustment_amount"},
-            {"Process Step": "Operating Costs", "Snowflake Table": "SILVER.OPERATING_COSTS", "Key Fields": "total_rcm_cost, billing_staff_cost, period"},
+            {
+                "Process Step": "Patient Scheduling",
+                "Snowflake Table": "SILVER.ENCOUNTERS",
+                "Key Fields": "encounter_type, department, date_of_service",
+            },
+            {
+                "Process Step": "Registration & Eligibility",
+                "Snowflake Table": "SILVER.PATIENTS",
+                "Key Fields": "patient_id, primary_payer_id, member_id",
+            },
+            {
+                "Process Step": "Medical Coding",
+                "Snowflake Table": "SILVER.CHARGES",
+                "Key Fields": "cpt_code, icd10_code, cpt_description",
+            },
+            {
+                "Process Step": "Charge Capture",
+                "Snowflake Table": "SILVER.CHARGES",
+                "Key Fields": "charge_amount, units, service_date, post_date",
+            },
+            {
+                "Process Step": "Claim Scrubbing",
+                "Snowflake Table": "SILVER.CLAIMS",
+                "Key Fields": "is_clean_claim, fail_reason",
+            },
+            {
+                "Process Step": "Claim Submission",
+                "Snowflake Table": "SILVER.CLAIMS",
+                "Key Fields": "submission_date, submission_method, claim_status",
+            },
+            {
+                "Process Step": "Payer Adjudication",
+                "Snowflake Table": "SILVER.PAYMENTS",
+                "Key Fields": "payment_amount, allowed_amount, payment_method",
+            },
+            {
+                "Process Step": "Denial Management",
+                "Snowflake Table": "SILVER.DENIALS",
+                "Key Fields": "denial_reason_code, denied_amount, denial_date",
+            },
+            {
+                "Process Step": "Appeals & Recovery",
+                "Snowflake Table": "SILVER.DENIALS",
+                "Key Fields": "appeal_status, appeal_date, recovered_amount",
+            },
+            {
+                "Process Step": "Patient Collections",
+                "Snowflake Table": "SILVER.ADJUSTMENTS",
+                "Key Fields": "adjustment_type_code, adjustment_amount",
+            },
+            {
+                "Process Step": "Operating Costs",
+                "Snowflake Table": "SILVER.OPERATING_COSTS",
+                "Key Fields": "total_rcm_cost, billing_staff_cost, period",
+            },
         ]
     )
     st.dataframe(mapping, use_container_width=True)
