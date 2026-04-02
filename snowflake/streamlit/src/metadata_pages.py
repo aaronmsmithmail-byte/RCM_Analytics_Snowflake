@@ -307,10 +307,10 @@ def render_data_catalog():
         df = df[df["Category"] == cat_filter]
 
     st.metric("Metrics shown", f"{len(df)} / {len(raw)}")
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, use_container_width=True)
 
     st.subheader("Data Tables Reference")
-    st.dataframe(pd.DataFrame(_TABLE_CATALOG), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(_TABLE_CATALOG), use_container_width=True)
 
 
 # ===========================================================================
@@ -322,28 +322,53 @@ def render_data_lineage():
     st.title("Data Lineage")
     st.caption("Medallion architecture data flow: CSV → Bronze → Silver → Gold → Dashboard")
 
-    st.markdown("""
-    ```
-    CSV Files (10 sources)
-        ↓  COPY INTO @RCM_STAGE
-    ┌─────────────────────────────────────────┐
-    │  BRONZE Schema  (10 tables, all VARCHAR) │
-    └─────────────────┬───────────────────────┘
-                      ↓  SP_BRONZE_TO_SILVER()
-    ┌─────────────────────────────────────────┐
-    │  SILVER Schema  (10 typed tables + FK)   │
-    └─────────────────┬───────────────────────┘
-                      ↓  SQL Views
-    ┌─────────────────────────────────────────┐
-    │  GOLD Schema    (5 aggregated views)     │
-    └─────────────────┬───────────────────────┘
-                      ↓
-    ┌─────────────────────────────────────────┐
-    │  Streamlit in Snowflake Dashboard        │
-    │  + Cortex Analyst AI Chat                │
-    └─────────────────────────────────────────┘
-    ```
-    """)
+    dot = """
+    digraph {
+        rankdir=TB;
+        node [shape=box, style="filled,rounded", fontname="Helvetica", fontsize=11];
+        edge [fontname="Helvetica", fontsize=9];
+
+        subgraph cluster_sources {
+            label="Source Systems"; style=dashed; color="#94a3b8";
+            csv [label="10 CSV Files\\n(payers, patients, providers,\\nencounters, charges, claims,\\npayments, denials, adjustments,\\noperating_costs)", fillcolor="#f1f5f9"];
+        }
+
+        subgraph cluster_staging {
+            label="Staging"; style=dashed; color="#94a3b8";
+            stage [label="@RCM_STAGE\\n(Internal Stage)", fillcolor="#e0e7ff"];
+        }
+
+        subgraph cluster_bronze {
+            label="Bronze Layer"; style=dashed; color="#f59e0b";
+            bronze [label="10 Bronze Tables\\n(all VARCHAR, raw)", fillcolor="#fef3c7"];
+        }
+
+        subgraph cluster_silver {
+            label="Silver Layer"; style=dashed; color="#10b981";
+            silver [label="10 Silver Tables\\n(typed, FK constraints)", fillcolor="#d1fae5"];
+        }
+
+        subgraph cluster_gold {
+            label="Gold Layer"; style=dashed; color="#6366f1";
+            gold [label="5 Gold Views\\n(aggregated KPIs)", fillcolor="#e0e7ff"];
+        }
+
+        subgraph cluster_apps {
+            label="Applications"; style=dashed; color="#1e6fbf";
+            dashboard [label="Streamlit Dashboard\\n(12 tabs)", fillcolor="#dbeafe"];
+            cortex [label="Cortex Analyst\\n(AI Chat)", fillcolor="#dbeafe"];
+        }
+
+        csv -> stage [label="PUT / Upload"];
+        stage -> bronze [label="COPY INTO"];
+        bronze -> silver [label="SP_BRONZE_TO_SILVER()"];
+        silver -> gold [label="SQL Views"];
+        silver -> dashboard [label="26 query_* functions"];
+        gold -> dashboard [label="Pre-aggregated KPIs"];
+        silver -> cortex [label="Semantic Model YAML"];
+    }
+    """
+    st.graphviz_chart(dot, use_container_width=True)
 
     st.subheader("Pipeline Components")
     components = pd.DataFrame(
@@ -381,7 +406,7 @@ def render_data_lineage():
             },
         ]
     )
-    st.dataframe(components, use_container_width=True, hide_index=True)
+    st.dataframe(components, use_container_width=True)
 
 
 # ===========================================================================
@@ -442,7 +467,7 @@ def render_knowledge_graph():
     st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Foreign Key Relationships")
-    st.dataframe(edges_df, use_container_width=True, hide_index=True)
+    st.dataframe(edges_df, use_container_width=True)
 
 
 # ===========================================================================
@@ -468,7 +493,7 @@ def render_semantic_layer():
     if selected != "All":
         df = df[df.iloc[:, 0] == selected]
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, use_container_width=True)
 
     st.subheader("Cortex Analyst Semantic Model")
     st.markdown("""
@@ -555,7 +580,7 @@ def render_data_validation(issues=None):
 
     if issues:
         df = pd.DataFrame(issues)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, use_container_width=True)
     else:
         st.info("No validation results available. Run validators to see results.")
 
@@ -585,4 +610,75 @@ def render_feature_backlog():
     if selected != "All":
         df = df[df.iloc[:, 2] == selected]
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, use_container_width=True)
+
+
+# ===========================================================================
+# Page 8: Business Processes
+# ===========================================================================
+
+
+def render_business_processes():
+    st.title("Revenue Cycle Business Process")
+    st.caption("End-to-end healthcare revenue cycle workflow with Snowflake data mapping.")
+
+    dot = """
+    digraph {
+        rankdir=LR;
+        node [shape=box, style="filled,rounded", fontname="Helvetica", fontsize=10];
+        edge [fontname="Helvetica", fontsize=8];
+
+        subgraph cluster_front {
+            label="Front End"; style=dashed; color="#1e6fbf"; fontname="Helvetica";
+            scheduling [label="Patient\\nScheduling", fillcolor="#dbeafe"];
+            registration [label="Registration\\n& Eligibility", fillcolor="#dbeafe"];
+            encounter [label="Patient\\nEncounter", fillcolor="#dbeafe"];
+        }
+
+        subgraph cluster_middle {
+            label="Middle Revenue Cycle"; style=dashed; color="#10b981"; fontname="Helvetica";
+            coding [label="Medical\\nCoding", fillcolor="#d1fae5"];
+            charge [label="Charge\\nCapture", fillcolor="#d1fae5"];
+            scrubbing [label="Claim\\nScrubbing", fillcolor="#d1fae5"];
+            submission [label="Claim\\nSubmission", fillcolor="#d1fae5"];
+        }
+
+        subgraph cluster_back {
+            label="Back End"; style=dashed; color="#f59e0b"; fontname="Helvetica";
+            adjudication [label="Payer\\nAdjudication", fillcolor="#fef3c7"];
+            payment [label="Payment\\nPosting", fillcolor="#fef3c7"];
+            denial [label="Denial\\nManagement", fillcolor="#fef3c7"];
+            appeals [label="Appeals &\\nRecovery", fillcolor="#fef3c7"];
+            collections [label="Patient\\nCollections", fillcolor="#fef3c7"];
+        }
+
+        scheduling -> registration -> encounter;
+        encounter -> coding -> charge -> scrubbing -> submission;
+        submission -> adjudication;
+        adjudication -> payment [label="Paid"];
+        adjudication -> denial [label="Denied"];
+        denial -> appeals [label="Appeal"];
+        denial -> collections [label="Write-off"];
+        appeals -> payment [label="Won"];
+        payment -> collections [label="Patient\\nbalance"];
+    }
+    """
+    st.graphviz_chart(dot, use_container_width=True)
+
+    st.subheader("Process to Snowflake Data Mapping")
+    mapping = pd.DataFrame(
+        [
+            {"Process Step": "Patient Scheduling", "Snowflake Table": "SILVER.ENCOUNTERS", "Key Fields": "encounter_type, department, date_of_service"},
+            {"Process Step": "Registration & Eligibility", "Snowflake Table": "SILVER.PATIENTS", "Key Fields": "patient_id, primary_payer_id, member_id"},
+            {"Process Step": "Medical Coding", "Snowflake Table": "SILVER.CHARGES", "Key Fields": "cpt_code, icd10_code, cpt_description"},
+            {"Process Step": "Charge Capture", "Snowflake Table": "SILVER.CHARGES", "Key Fields": "charge_amount, units, service_date, post_date"},
+            {"Process Step": "Claim Scrubbing", "Snowflake Table": "SILVER.CLAIMS", "Key Fields": "is_clean_claim, fail_reason"},
+            {"Process Step": "Claim Submission", "Snowflake Table": "SILVER.CLAIMS", "Key Fields": "submission_date, submission_method, claim_status"},
+            {"Process Step": "Payer Adjudication", "Snowflake Table": "SILVER.PAYMENTS", "Key Fields": "payment_amount, allowed_amount, payment_method"},
+            {"Process Step": "Denial Management", "Snowflake Table": "SILVER.DENIALS", "Key Fields": "denial_reason_code, denied_amount, denial_date"},
+            {"Process Step": "Appeals & Recovery", "Snowflake Table": "SILVER.DENIALS", "Key Fields": "appeal_status, appeal_date, recovered_amount"},
+            {"Process Step": "Patient Collections", "Snowflake Table": "SILVER.ADJUSTMENTS", "Key Fields": "adjustment_type_code, adjustment_amount"},
+            {"Process Step": "Operating Costs", "Snowflake Table": "SILVER.OPERATING_COSTS", "Key Fields": "total_rcm_cost, billing_staff_cost, period"},
+        ]
+    )
+    st.dataframe(mapping, use_container_width=True)
