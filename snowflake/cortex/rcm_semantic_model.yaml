@@ -86,19 +86,19 @@ tables:
         synonyms:
           - first pass rate
       - name: avg_charge_lag
-        expr: "AVG(DATEDIFF('day', TRY_TO_DATE(DATE_OF_SERVICE), TRY_TO_DATE(SUBMISSION_DATE)))"
+        expr: "AVG(DATEDIFF('day', TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD'), TRY_TO_DATE(SUBMISSION_DATE, 'YYYY-MM-DD')))"
         description: Average days between service and claim submission
         synonyms:
           - submission lag
           - charge lag days
     time_dimensions:
       - name: date_of_service_time
-        expr: TRY_TO_DATE(DATE_OF_SERVICE)
+        expr: TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD')
         description: Date of service as a date type
         synonyms:
           - service date
       - name: submission_date_time
-        expr: TRY_TO_DATE(SUBMISSION_DATE)
+        expr: TRY_TO_DATE(SUBMISSION_DATE, 'YYYY-MM-DD')
         description: Submission date as a date type
 
   - name: PAYMENTS
@@ -156,7 +156,7 @@ tables:
         description: "Percentage of underpaid claims — benchmark: ≤ 5%"
     time_dimensions:
       - name: payment_date_time
-        expr: TRY_TO_DATE(PAYMENT_DATE)
+        expr: TRY_TO_DATE(PAYMENT_DATE, 'YYYY-MM-DD')
         description: Payment date as a date type
 
   - name: DENIALS
@@ -209,7 +209,7 @@ tables:
           - appeal win rate
     time_dimensions:
       - name: denial_date_time
-        expr: TRY_TO_DATE(DENIAL_DATE)
+        expr: TRY_TO_DATE(DENIAL_DATE, 'YYYY-MM-DD')
         description: Denial date as a date type
 
   - name: CHARGES
@@ -256,7 +256,7 @@ tables:
         description: Number of charge lines
     time_dimensions:
       - name: service_date_time
-        expr: TRY_TO_DATE(SERVICE_DATE)
+        expr: TRY_TO_DATE(SERVICE_DATE, 'YYYY-MM-DD')
         description: Service date as a date type
 
   - name: ADJUSTMENTS
@@ -298,7 +298,7 @@ tables:
         description: Total contractual adjustments in USD
     time_dimensions:
       - name: adjustment_date_time
-        expr: TRY_TO_DATE(ADJUSTMENT_DATE)
+        expr: TRY_TO_DATE(ADJUSTMENT_DATE, 'YYYY-MM-DD')
         description: Adjustment date as a date type
 
   - name: OPERATING_COSTS
@@ -450,7 +450,7 @@ tables:
           - visit count
     time_dimensions:
       - name: encounter_date
-        expr: TRY_TO_DATE(DATE_OF_SERVICE)
+        expr: TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD')
         description: Encounter date as a date type
 
 # =========================================================================

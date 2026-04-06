@@ -2045,8 +2045,8 @@ def _fetch_process_kpis() -> dict:
         "encounter_count": _val("SELECT COUNT(*) FROM RCM_ANALYTICS.SILVER.ENCOUNTERS"),
         "patient_count": _val("SELECT COUNT(DISTINCT PATIENT_ID) FROM RCM_ANALYTICS.SILVER.ENCOUNTERS"),
         "charge_lag_days": _val(
-            "SELECT ROUND(AVG(DATEDIFF('day', TRY_TO_DATE(SERVICE_DATE), "
-            "TRY_TO_DATE(POST_DATE))), 1) "
+            "SELECT ROUND(AVG(DATEDIFF('day', TRY_TO_DATE(SERVICE_DATE, 'YYYY-MM-DD'), "
+            "TRY_TO_DATE(POST_DATE, 'YYYY-MM-DD'))), 1) "
             "FROM RCM_ANALYTICS.SILVER.CHARGES "
             "WHERE SERVICE_DATE IS NOT NULL AND POST_DATE IS NOT NULL"
         ),
@@ -2089,8 +2089,8 @@ def _fetch_process_kpis() -> dict:
             "  SELECT SUM(c.CHARGE_AMOUNT) AS total_charges, "
             "    COALESCE((SELECT SUM(PAYMENT_AMOUNT) FROM RCM_ANALYTICS.SILVER.PAYMENTS), 0) AS total_pay, "
             "    COALESCE((SELECT SUM(ADJUSTMENT_AMOUNT) FROM RCM_ANALYTICS.SILVER.ADJUSTMENTS), 0) AS total_adj, "
-            "    DATEDIFF('day', MIN(TRY_TO_DATE(c.SERVICE_DATE)), "
-            "                    MAX(TRY_TO_DATE(c.SERVICE_DATE))) + 1 AS period_days "
+            "    DATEDIFF('day', MIN(TRY_TO_DATE(c.SERVICE_DATE, 'YYYY-MM-DD')), "
+            "                    MAX(TRY_TO_DATE(c.SERVICE_DATE, 'YYYY-MM-DD'))) + 1 AS period_days "
             "  FROM RCM_ANALYTICS.SILVER.CHARGES c "
             ") "
             "SELECT ROUND((total_charges - total_pay - total_adj) "
