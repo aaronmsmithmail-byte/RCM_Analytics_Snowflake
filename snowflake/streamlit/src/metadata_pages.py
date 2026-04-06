@@ -2574,14 +2574,14 @@ def render_feature_backlog():
                         session.sql(
                             f"UPDATE RCM_ANALYTICS.METADATA.FEATURE_BACKLOG SET STATUS = '{new_status}', UPDATED_AT = CURRENT_TIMESTAMP() WHERE ID = {row['id']}"
                         ).collect()
-                        st.rerun()
+                        st.experimental_rerun()
                 with col_delete:
                     st.markdown("")
                     if st.button("🗑️ Delete", key=f"del_{row['id']}", type="secondary"):
                         session.sql(
                             f"DELETE FROM RCM_ANALYTICS.METADATA.FEATURE_BACKLOG WHERE ID = {row['id']}"
                         ).collect()
-                        st.rerun()
+                        st.experimental_rerun()
 
                 st.markdown(f"**Priority:** {p_icon} {row['priority']}")
                 st.markdown(f"**Description:**  \n{row['description']}")
@@ -2625,4 +2625,4 @@ def render_feature_backlog():
                     f"VALUES ('{t}', '{d}', '{priority}', {ac_val}, {b_val}, 'Not Started')"
                 ).collect()
                 st.success(f'Feature request "{title.strip()}" submitted!')
-                st.rerun()
+                st.experimental_rerun()
