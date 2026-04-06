@@ -805,6 +805,11 @@ with st.sidebar.expander("Debug: KPI Diagnostics", expanded=False):
         st.text(str(gcr_trend.dtypes.to_dict()))
         st.caption("gcr_trend (first 3 rows):")
         st.dataframe(gcr_trend.head(3))
+    if not ncr_trend.empty:
+        st.caption("ncr_trend dtypes:")
+        st.text(str(ncr_trend.dtypes.to_dict()))
+        st.caption("ncr_trend (first 3 rows):")
+        st.dataframe(ncr_trend.head(3))
     if not dar_trend.empty:
         st.caption("dar_trend dtypes:")
         st.text(str(dar_trend.dtypes.to_dict()))
@@ -1210,8 +1215,11 @@ with tab2:
     col_left, col_right = st.columns(2)
     with col_left:
         st.subheader("Collection Rates Over Time")
-        combined_trend = gcr_trend[["gcr"]].join(ncr_trend[["ncr"]], how="outer").fillna(0).reset_index()
-        combined_trend.columns = ["Month", "Gross Collection Rate", "Net Collection Rate"]
+        combined_trend = pd.DataFrame({
+            "Month": gcr_trend.index.tolist(),
+            "Gross Collection Rate": gcr_trend["gcr"].tolist(),
+            "Net Collection Rate": ncr_trend["ncr"].reindex(gcr_trend.index).fillna(0).tolist(),
+        })
         fig = px.line(
             combined_trend,
             x="Month",
@@ -1527,6 +1535,10 @@ with tab4:
         st.subheader("A/R Aging Buckets")
         aging_df = aging_summary.reset_index()
         aging_df.columns = ["Bucket", "Claim Count", "Total A/R", "% of Total"]
+        # Convert to plain Python lists for SiS Plotly compatibility
+        aging_df["Bucket"] = aging_df["Bucket"].tolist()
+        aging_df["Total A/R"] = [float(v) for v in aging_df["Total A/R"]]
+        aging_df["% of Total"] = [float(v) for v in aging_df["% of Total"]]
         fig = px.bar(
             aging_df,
             x="Bucket",
@@ -1555,8 +1567,8 @@ with tab4:
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(
         go.Bar(
-            x=dar_trend.reset_index()["year_month"],
-            y=dar_trend["ar_balance"],
+            x=list(dar_trend.index),
+            y=list(dar_trend["ar_balance"]),
             name="A/R Balance",
             marker_color=RCM_COLORS[0],
             opacity=0.6,
@@ -1565,8 +1577,8 @@ with tab4:
     )
     fig.add_trace(
         go.Scatter(
-            x=dar_trend.reset_index()["year_month"],
-            y=dar_trend["days_in_ar"],
+            x=list(dar_trend.index),
+            y=list(dar_trend["days_in_ar"]),
             name="Days in A/R",
             line=dict(color=RCM_COLORS[3], width=3),
         ),
@@ -2481,8 +2493,8 @@ with tab9:
                 fig = go.Figure()
                 fig.add_trace(
                     go.Bar(
-                        x=underpay_trend.index,
-                        y=underpay_trend["total_underpaid"],
+                        x=list(underpay_trend.index),
+                        y=list(underpay_trend["total_underpaid"]),
                         name="Underpayment Amount",
                         marker_color=RCM_COLORS[3],
                     )
@@ -2499,8 +2511,8 @@ with tab9:
                 fig = go.Figure()
                 fig.add_trace(
                     go.Scatter(
-                        x=underpay_trend.index,
-                        y=underpay_trend["underpayment_rate"],
+                        x=list(underpay_trend.index),
+                        y=list(underpay_trend["underpayment_rate"]),
                         mode="lines+markers",
                         name="Underpayment Rate",
                         line=dict(color=RCM_COLORS[3], width=2),
@@ -2628,8 +2640,8 @@ with tab10:
             fig = go.Figure()
             fig.add_trace(
                 go.Bar(
-                    x=cf_series.index,
-                    y=cf_series.values,
+                    x=list(cf_series.index),
+                    y=list(cf_series.values),
                     name="Actual Collections",
                     marker_color=RCM_COLORS[1],
                     opacity=0.8,
@@ -2646,8 +2658,8 @@ with tab10:
             )
             fig.add_trace(
                 go.Scatter(
-                    x=cf_future,
-                    y=cf_forecast,
+                    x=list(cf_future),
+                    y=list(cf_forecast),
                     name="Projected",
                     mode="lines+markers",
                     line=dict(color=RCM_COLORS[2], width=3),
@@ -3083,8 +3095,8 @@ with tab11:
                 fig = go.Figure()
                 fig.add_trace(
                     go.Bar(
-                        x=pr_trend.index,
-                        y=pr_trend["total_patient_resp"],
+                        x=list(pr_trend.index),
+                        y=list(pr_trend["total_patient_resp"]),
                         name="Patient Responsibility",
                         marker_color=RCM_COLORS[2],
                     )
@@ -3101,8 +3113,8 @@ with tab11:
                 fig = go.Figure()
                 fig.add_trace(
                     go.Scatter(
-                        x=pr_trend.index,
-                        y=pr_trend["patient_resp_rate"],
+                        x=list(pr_trend.index),
+                        y=list(pr_trend["patient_resp_rate"]),
                         mode="lines+markers",
                         name="PR Rate (%)",
                         line=dict(color=RCM_COLORS[2], width=2),
