@@ -260,4 +260,4 @@ def render_chat_ui():
                 }
             )
 
-        st.rerun()
+        st.experimental_rerun()
