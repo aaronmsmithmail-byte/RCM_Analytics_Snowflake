@@ -1040,9 +1040,45 @@ def render_data_catalog():
 
     st.divider()
 
-    # ── Data tables section ──
+    # ── Data tables section — sourced from Snowflake Horizon Data Catalog ──
     st.subheader("Data Tables Catalog")
-    st.dataframe(pd.DataFrame(_TABLE_CATALOG), use_container_width=True)
+    st.caption(
+        "Sourced from the Snowflake Horizon Data Catalog "
+        "(INFORMATION_SCHEMA.TABLES with comments applied via "
+        "snowflake/catalog/tags_and_comments.sql)."
+    )
+
+    horizon_df = _query_meta("""
+        SELECT TABLE_SCHEMA,
+               TABLE_NAME,
+               TABLE_TYPE,
+               COALESCE(COMMENT, '') AS COMMENT
+        FROM   RCM_ANALYTICS.INFORMATION_SCHEMA.TABLES
+        WHERE  TABLE_CATALOG = 'RCM_ANALYTICS'
+          AND  TABLE_SCHEMA IN ('BRONZE', 'SILVER', 'GOLD')
+        ORDER  BY CASE TABLE_SCHEMA
+                      WHEN 'BRONZE' THEN 1
+                      WHEN 'SILVER' THEN 2
+                      WHEN 'GOLD'   THEN 3
+                  END,
+                  TABLE_NAME
+    """)
+    if not horizon_df.empty:
+        layer_map = {"BRONZE": "Bronze", "SILVER": "Silver", "GOLD": "Gold"}
+        display_df = pd.DataFrame(
+            {
+                "Layer": horizon_df["table_schema"].map(
+                    lambda s: layer_map.get(s.upper(), s) if isinstance(s, str) else s
+                ),
+                "Table": horizon_df["table_name"],
+                "Type": horizon_df["table_type"],
+                "Description": horizon_df["comment"],
+            }
+        )
+        st.dataframe(display_df, use_container_width=True)
+    else:
+        st.info("Live Horizon Data Catalog unavailable — showing static fallback catalog.")
+        st.dataframe(pd.DataFrame(_TABLE_CATALOG), use_container_width=True)
 
 
 # ── Page 2: Data Lineage ──────────────────────────────────────────────

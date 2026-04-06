@@ -21,6 +21,23 @@ from snowflake.snowpark.context import get_active_session
 # Stage path where the semantic model YAML is uploaded
 SEMANTIC_MODEL_STAGE = "@RCM_ANALYTICS.STAGING.RCM_STAGE/cortex/rcm_semantic_model.yaml"
 
+SUGGESTED_QUESTIONS = [
+    "Which payer has the highest denial rate? Show me the breakdown.",
+    "What are the top 5 denial reason codes by total denied amount?",
+    "Show me monthly denial rate trend for the past 12 months.",
+    "Which department generates the most revenue per encounter?",
+    "Explain Days in A/R and what's driving our current value.",
+    "How does the medallion architecture work in this database?",
+]
+
+
+def _safe_rerun():
+    """Call st.rerun() with fallback to st.experimental_rerun() for SiS compatibility."""
+    try:
+        st.rerun()
+    except AttributeError:
+        st.experimental_rerun()
+
 
 def get_session():
     """Get the active Snowpark session (provided by SiS runtime)."""
@@ -71,10 +88,11 @@ def send_analyst_message(session, user_question, message_history=None):
             "semantic_model_file": SEMANTIC_MODEL_STAGE,
         }
 
+        json_str = json.dumps(request_body).replace("\\", "\\\\").replace("'", "''")
         resp = session.sql(
             f"""
             SELECT SNOWFLAKE.CORTEX.ANALYST(
-                PARSE_JSON('{json.dumps(request_body).replace("'", "''")}')
+                PARSE_JSON('{json_str}')
             ) AS RESPONSE
             """
         ).collect()
@@ -190,11 +208,52 @@ def render_chat_ui():
     if "analyst_messages" not in st.session_state:
         st.session_state.analyst_messages = []
 
-    st.subheader("AI Assistant (Cortex Analyst)")
+    st.subheader("AI Assistant")
     st.caption(
-        "Ask questions about your RCM data in natural language. "
-        "Cortex Analyst will generate and execute SQL queries against your data."
+        "Ask natural-language questions about your RCM data. "
+        "The AI can query the database directly to answer questions "
+        "about specific payers, departments, denial codes, and more."
     )
+
+    # ── Model selector + clear button ─────────────────────────────────
+    _col_model, _col_clear = st.columns([3, 1])
+    with _col_model:
+        st.selectbox(
+            "Model",
+            ["Cortex Analyst (Snowflake)"],
+            index=0,
+            key="ai_model_display",
+            disabled=True,
+        )
+    with _col_clear:
+        st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+        if st.button("Clear chat", key="ai_clear_chat", use_container_width=True):
+            st.session_state.analyst_messages = []
+            _safe_rerun()
+
+    # ── Suggested questions (shown when chat is empty) ────────────────
+    if not st.session_state.analyst_messages:
+        st.markdown("**Suggested questions:**")
+        _sug_cols_row1 = st.columns(3)
+        for i in range(3):
+            with _sug_cols_row1[i]:
+                if st.button(
+                    SUGGESTED_QUESTIONS[i],
+                    key=f"ai_sug_{i}",
+                    use_container_width=True,
+                ):
+                    st.session_state["ai_pending_input"] = SUGGESTED_QUESTIONS[i]
+                    _safe_rerun()
+        _sug_cols_row2 = st.columns(3)
+        for i in range(3, 6):
+            with _sug_cols_row2[i - 3]:
+                if st.button(
+                    SUGGESTED_QUESTIONS[i],
+                    key=f"ai_sug_{i}",
+                    use_container_width=True,
+                ):
+                    st.session_state["ai_pending_input"] = SUGGESTED_QUESTIONS[i]
+                    _safe_rerun()
 
     # Display chat history
     for msg in st.session_state.analyst_messages:
@@ -209,23 +268,26 @@ def render_chat_ui():
                 st.dataframe(msg["results"], use_container_width=True)
         st.divider()
 
-    # Chat input — compatible with older SiS Streamlit versions
+    # Chat input -- compatible with older SiS Streamlit versions
     input_col, btn_col = st.columns([5, 1])
     with input_col:
         user_input = st.text_input(
-            "Ask about your RCM data",
+            "Ask a question about your RCM data...",
             key="analyst_input",
             label_visibility="collapsed",
-            placeholder="Ask about your RCM data...",
+            placeholder="Ask a question about your RCM data...",
         )
     with btn_col:
         send_clicked = st.button("Send", type="primary", use_container_width=True)
 
-    if send_clicked and user_input:
+    # Determine effective input: from text box or from a suggested question click
+    effective_input = st.session_state.pop("ai_pending_input", None) or (user_input if send_clicked else None)
+
+    if effective_input:
         st.session_state.analyst_messages.append(
             {
                 "role": "user",
-                "content": user_input,
+                "content": effective_input,
             }
         )
 
@@ -234,7 +296,7 @@ def render_chat_ui():
 
         # Get Cortex Analyst response
         with st.spinner("Analyzing..."):
-            response = send_analyst_message(session, user_input, history)
+            response = send_analyst_message(session, effective_input, history)
 
         if response["type"] == "error":
             st.session_state.analyst_messages.append(
@@ -260,4 +322,4 @@ def render_chat_ui():
                 }
             )
 
-        st.experimental_rerun()
+        _safe_rerun()
