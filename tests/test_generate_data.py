@@ -15,7 +15,7 @@ EXPECTED_FILES = [
     ("providers.csv", 25),
     ("encounters.csv", 3000),
     ("claims.csv", 2800),
-    ("operating_costs.csv", 24),
+    ("operating_costs.csv", 25),  # ~25 months (dynamic 2-year range)
 ]
 
 
