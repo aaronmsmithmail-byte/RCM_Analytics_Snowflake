@@ -1215,11 +1215,13 @@ with tab2:
     col_left, col_right = st.columns(2)
     with col_left:
         st.subheader("Collection Rates Over Time")
-        combined_trend = pd.DataFrame({
-            "Month": gcr_trend.index.tolist(),
-            "Gross Collection Rate": gcr_trend["gcr"].tolist(),
-            "Net Collection Rate": ncr_trend["ncr"].reindex(gcr_trend.index).fillna(0).tolist(),
-        })
+        combined_trend = pd.DataFrame(
+            {
+                "Month": gcr_trend.index.tolist(),
+                "Gross Collection Rate": gcr_trend["gcr"].tolist(),
+                "Net Collection Rate": ncr_trend["ncr"].reindex(gcr_trend.index).fillna(0).tolist(),
+            }
+        )
         fig = px.line(
             combined_trend,
             x="Month",
