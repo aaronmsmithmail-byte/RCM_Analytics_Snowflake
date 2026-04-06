@@ -107,17 +107,17 @@ def query_days_in_ar(p: FilterParams):
         + """
 , monthly_charges AS (
     SELECT TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
-           SUM(total_charge_amount) AS charges
+           SUM(total_charge_amount)::FLOAT AS charges
     FROM filtered_claims
     GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
     SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
-           COALESCE(SUM(p.payment_amount), 0) AS payments
+           COALESCE(SUM(p.payment_amount), 0)::FLOAT AS payments
     FROM filtered_claims fc
     LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
     GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 )
-SELECT c.period, c.charges, COALESCE(mp.payments, 0) AS payments
+SELECT c.period, c.charges, COALESCE(mp.payments, 0)::FLOAT AS payments
 FROM monthly_charges c
 LEFT JOIN monthly_payments mp ON c.period = mp.period
 ORDER BY c.period
@@ -146,25 +146,25 @@ def query_net_collection_rate(p: FilterParams):
         + """
 , monthly_charges AS (
     SELECT TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
-           SUM(total_charge_amount) AS charges
+           SUM(total_charge_amount)::FLOAT AS charges
     FROM filtered_claims
     GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
     SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
-           COALESCE(SUM(p.payment_amount), 0) AS payments
+           COALESCE(SUM(p.payment_amount), 0)::FLOAT AS payments
     FROM filtered_claims fc
     LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
     GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_contractual AS (
     SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(CASE WHEN a.adjustment_type_code = 'CONTRACTUAL'
-                             THEN a.adjustment_amount ELSE 0 END), 0) AS contractual_adj
+                             THEN a.adjustment_amount ELSE 0 END), 0)::FLOAT AS contractual_adj
     FROM filtered_claims fc
     LEFT JOIN RCM_ANALYTICS.SILVER.ADJUSTMENTS a ON fc.claim_id = a.claim_id
     GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 )
-SELECT c.period, c.charges, COALESCE(mp.payments, 0) AS payments,
-       COALESCE(mc.contractual_adj, 0) AS contractual_adj
+SELECT c.period, c.charges, COALESCE(mp.payments, 0)::FLOAT AS payments,
+       COALESCE(mc.contractual_adj, 0)::FLOAT AS contractual_adj
 FROM monthly_charges c
 LEFT JOIN monthly_payments mp ON c.period = mp.period
 LEFT JOIN monthly_contractual mc ON c.period = mc.period
@@ -198,17 +198,17 @@ def query_gross_collection_rate(p: FilterParams):
         + """
 , monthly_charges AS (
     SELECT TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
-           SUM(total_charge_amount) AS charges
+           SUM(total_charge_amount)::FLOAT AS charges
     FROM filtered_claims
     GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
     SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
-           COALESCE(SUM(p.payment_amount), 0) AS payments
+           COALESCE(SUM(p.payment_amount), 0)::FLOAT AS payments
     FROM filtered_claims fc
     LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
     GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 )
-SELECT c.period, c.charges, COALESCE(mp.payments, 0) AS payments
+SELECT c.period, c.charges, COALESCE(mp.payments, 0)::FLOAT AS payments
 FROM monthly_charges c
 LEFT JOIN monthly_payments mp ON c.period = mp.period
 ORDER BY c.period

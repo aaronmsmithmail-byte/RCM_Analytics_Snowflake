@@ -794,6 +794,23 @@ accuracy_val = query_payment_accuracy(params)
 bad_debt_val, bad_debt_amt, total_charges_kpi = query_bad_debt_rate(params)
 ctc_val, ctc_trend = query_cost_to_collect(params)
 
+# ── Debug Panel (temporary) ─────────────────────────────────────────
+# Displays raw KPI values and DataFrame dtypes to diagnose chart issues.
+# Remove this block once charts are confirmed working.
+with st.sidebar.expander("Debug: KPI Diagnostics", expanded=False):
+    st.caption(f"GCR: {gcr_val}%  |  NCR: {ncr_val}%")
+    st.caption(f"DAR: {dar_val}  |  Denial: {denial_val}%")
+    if not gcr_trend.empty:
+        st.caption("gcr_trend dtypes:")
+        st.text(str(gcr_trend.dtypes.to_dict()))
+        st.caption("gcr_trend (first 3 rows):")
+        st.dataframe(gcr_trend.head(3))
+    if not dar_trend.empty:
+        st.caption("dar_trend dtypes:")
+        st.text(str(dar_trend.dtypes.to_dict()))
+        st.caption("dar_trend (first 3 rows):")
+        st.dataframe(dar_trend.head(3))
+
 # ── Alert Threshold Configuration ────────────────────────────────────
 # Defaults match industry benchmarks.  Users can adjust via the sidebar
 # expander and thresholds persist for the browser session.
