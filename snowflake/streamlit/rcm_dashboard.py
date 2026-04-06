@@ -2871,7 +2871,7 @@ with tab10:
 
     col_s1, col_s2, col_s3 = st.columns(3)
 
-    with col_s1, st.container(border=True):
+    with col_s1, st.container():
         st.markdown("#### Reduce Denial Rate")
         st.caption(f"Baseline: **{denial_val:.1f}%** denial rate across **{int(_avg_monthly_cls):,}** claims/month")
         denial_improve = st.slider(
@@ -2896,7 +2896,7 @@ with tab10:
                 f"**${annual_recovery:,.0f}/year**."
             )
 
-    with col_s2, st.container(border=True):
+    with col_s2, st.container():
         st.markdown("#### Reduce Days in A/R")
         st.caption(f"Baseline: **{dar_val:.1f} days** A/R | Avg daily charges: **${_avg_daily_charges:,.0f}**")
         dar_improve = st.slider(
@@ -2916,7 +2916,7 @@ with tab10:
         if dar_improve > 0 and _avg_daily_charges > 0:
             st.success(f"Cutting DAR by **{dar_improve} days** releases **${cash_unlocked:,.0f}** in working capital.")
 
-    with col_s3, st.container(border=True):
+    with col_s3, st.container():
         st.markdown("#### Improve Clean Claim Rate")
         st.caption(f"Baseline: **{ccr_val:.1f}%** CCR | Rework cost: **${_rework_cost:.0f}/claim**")
         ccr_improve = st.slider(
