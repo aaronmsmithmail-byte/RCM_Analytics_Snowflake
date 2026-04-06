@@ -177,6 +177,10 @@ def render_chat_ui():
     """
     Render the Cortex Analyst chat interface in a Streamlit tab.
 
+    Uses st.text_input + st.button instead of st.chat_input/st.chat_message
+    for compatibility with Streamlit in Snowflake (SiS), which runs an older
+    Streamlit version that lacks the chat_* widgets.
+
     Manages conversation history in st.session_state and displays
     messages with SQL results inline.
     """
@@ -194,19 +198,30 @@ def render_chat_ui():
 
     # Display chat history
     for msg in st.session_state.analyst_messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+        if msg["role"] == "user":
+            st.markdown(f"**You:** {msg['content']}")
+        else:
+            st.markdown(f"**Analyst:** {msg['content']}")
             if msg.get("sql"):
                 with st.expander("View SQL", expanded=False):
                     st.code(msg["sql"], language="sql")
             if msg.get("results") is not None:
                 st.dataframe(msg["results"], use_container_width=True)
+        st.divider()
 
-    # Chat input
-    if user_input := st.chat_input("Ask about your RCM data..."):
-        # Display user message
-        with st.chat_message("user"):
-            st.markdown(user_input)
+    # Chat input — compatible with older SiS Streamlit versions
+    input_col, btn_col = st.columns([5, 1])
+    with input_col:
+        user_input = st.text_input(
+            "Ask about your RCM data",
+            key="analyst_input",
+            label_visibility="collapsed",
+            placeholder="Ask about your RCM data...",
+        )
+    with btn_col:
+        send_clicked = st.button("Send", type="primary", use_container_width=True)
+
+    if send_clicked and user_input:
         st.session_state.analyst_messages.append(
             {
                 "role": "user",
@@ -218,40 +233,31 @@ def render_chat_ui():
         history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.analyst_messages[:-1]]
 
         # Get Cortex Analyst response
-        with st.chat_message("analyst"):
-            with st.spinner("Analyzing..."):
-                response = send_analyst_message(session, user_input, history)
+        with st.spinner("Analyzing..."):
+            response = send_analyst_message(session, user_input, history)
 
-            if response["type"] == "error":
-                st.error(response["content"])
-                st.session_state.analyst_messages.append(
-                    {
-                        "role": "analyst",
-                        "content": f"Error: {response['content']}",
-                    }
-                )
-            elif response["type"] == "sql":
-                st.markdown(response["content"])
-                if response["sql"]:
-                    with st.expander("View SQL", expanded=False):
-                        st.code(response["sql"], language="sql")
-                if response["results"] is not None:
-                    st.dataframe(response["results"], use_container_width=True)
-                st.session_state.analyst_messages.append(
-                    {
-                        "role": "analyst",
-                        "content": response["content"],
-                        "sql": response["sql"],
-                        "results": response["results"],
-                    }
-                )
-            else:
-                st.markdown(response["content"])
-                st.session_state.analyst_messages.append(
-                    {
-                        "role": "analyst",
-                        "content": response["content"],
-                    }
-                )
+        if response["type"] == "error":
+            st.session_state.analyst_messages.append(
+                {
+                    "role": "analyst",
+                    "content": f"Error: {response['content']}",
+                }
+            )
+        elif response["type"] == "sql":
+            st.session_state.analyst_messages.append(
+                {
+                    "role": "analyst",
+                    "content": response["content"],
+                    "sql": response["sql"],
+                    "results": response["results"],
+                }
+            )
+        else:
+            st.session_state.analyst_messages.append(
+                {
+                    "role": "analyst",
+                    "content": response["content"],
+                }
+            )
 
         st.rerun()
