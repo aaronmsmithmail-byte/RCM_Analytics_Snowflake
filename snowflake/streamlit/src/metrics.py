@@ -68,11 +68,6 @@ def _query(sql):
     session = _get_session()
     df = session.sql(sql).to_pandas()
     df.columns = [c.lower() for c in df.columns]
-    # Coerce numeric columns — Snowpark may return Decimal objects for
-    # NUMBER/FLOAT columns which break numpy arithmetic (np.where, division).
-    for col in df.columns:
-        if col != "period":
-            df[col] = pd.to_numeric(df[col], errors="ignore")
     return df
 
 
@@ -1047,7 +1042,10 @@ _DOMAIN_LABELS = {
 
 
 def query_data_freshness():
-    sql = "SELECT domain, last_loaded_at, row_count, source_file FROM RCM_ANALYTICS.METADATA.PIPELINE_RUNS ORDER BY domain"
+    sql = (
+        "SELECT domain, last_loaded_at, row_count, source_file"
+        " FROM RCM_ANALYTICS.METADATA.PIPELINE_RUNS ORDER BY domain"
+    )
     df = _query(sql)
     if df.empty:
         return pd.DataFrame(
