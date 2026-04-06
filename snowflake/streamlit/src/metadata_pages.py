@@ -1077,9 +1077,7 @@ def render_data_catalog():
         )
         st.dataframe(display_df, use_container_width=True)
     else:
-        st.info(
-            "Live Horizon Data Catalog unavailable — showing static fallback catalog."
-        )
+        st.info("Live Horizon Data Catalog unavailable — showing static fallback catalog.")
         st.dataframe(pd.DataFrame(_TABLE_CATALOG), use_container_width=True)
 
 

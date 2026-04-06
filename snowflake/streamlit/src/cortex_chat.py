@@ -281,9 +281,7 @@ def render_chat_ui():
         send_clicked = st.button("Send", type="primary", use_container_width=True)
 
     # Determine effective input: from text box or from a suggested question click
-    effective_input = st.session_state.pop("ai_pending_input", None) or (
-        user_input if send_clicked else None
-    )
+    effective_input = st.session_state.pop("ai_pending_input", None) or (user_input if send_clicked else None)
 
     if effective_input:
         st.session_state.analyst_messages.append(
@@ -294,10 +292,7 @@ def render_chat_ui():
         )
 
         # Build conversation history for context
-        history = [
-            {"role": m["role"], "content": m["content"]}
-            for m in st.session_state.analyst_messages[:-1]
-        ]
+        history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.analyst_messages[:-1]]
 
         # Get Cortex Analyst response
         with st.spinner("Analyzing..."):
