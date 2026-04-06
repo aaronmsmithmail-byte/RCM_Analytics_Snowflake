@@ -37,7 +37,7 @@ CREATE TAG IF NOT EXISTS SENSITIVITY
 
 COMMENT ON DATABASE RCM_ANALYTICS IS
     'Healthcare Revenue Cycle Management Analytics — Medallion architecture '
-    '(Bronze → Silver → Gold) with 10 data entities, 23 KPIs, and Cortex Analyst integration.';
+    '(Bronze -> Silver -> Gold) with 10 data entities, 23 KPIs, and Cortex Analyst integration.';
 
 COMMENT ON SCHEMA RCM_ANALYTICS.BRONZE IS
     'Raw ingestion layer — all VARCHAR columns loaded from staged CSV files via COPY INTO.';
@@ -135,7 +135,7 @@ COMMENT ON COLUMN SILVER.PATIENTS.FIRST_NAME IS 'Patient first name. PII — acc
 COMMENT ON COLUMN SILVER.PATIENTS.LAST_NAME IS 'Patient last name. PII — access restricted.';
 COMMENT ON COLUMN SILVER.PATIENTS.DATE_OF_BIRTH IS 'Patient date of birth (YYYY-MM-DD). PII.';
 COMMENT ON COLUMN SILVER.PATIENTS.GENDER IS 'Patient gender (M/F/Other).';
-COMMENT ON COLUMN SILVER.PATIENTS.PRIMARY_PAYER_ID IS 'FK → SILVER.PAYERS. Primary insurance payer.';
+COMMENT ON COLUMN SILVER.PATIENTS.PRIMARY_PAYER_ID IS 'FK -> SILVER.PAYERS. Primary insurance payer.';
 COMMENT ON COLUMN SILVER.PATIENTS.MEMBER_ID IS 'Insurance member/subscriber ID. PII.';
 COMMENT ON COLUMN SILVER.PATIENTS.ZIP_CODE IS 'Patient ZIP code. PII — geographic identifier.';
 
@@ -158,8 +158,8 @@ COMMENT ON TABLE SILVER.ENCOUNTERS IS
     'Each encounter generates charges and claims. FK: PATIENT_ID, PROVIDER_ID.';
 
 COMMENT ON COLUMN SILVER.ENCOUNTERS.ENCOUNTER_ID IS 'Unique visit identifier. Primary key.';
-COMMENT ON COLUMN SILVER.ENCOUNTERS.PATIENT_ID IS 'FK → SILVER.PATIENTS. The patient seen.';
-COMMENT ON COLUMN SILVER.ENCOUNTERS.PROVIDER_ID IS 'FK → SILVER.PROVIDERS. The clinician who provided care.';
+COMMENT ON COLUMN SILVER.ENCOUNTERS.PATIENT_ID IS 'FK -> SILVER.PATIENTS. The patient seen.';
+COMMENT ON COLUMN SILVER.ENCOUNTERS.PROVIDER_ID IS 'FK -> SILVER.PROVIDERS. The clinician who provided care.';
 COMMENT ON COLUMN SILVER.ENCOUNTERS.DATE_OF_SERVICE IS 'Date the healthcare service was rendered (YYYY-MM-DD).';
 COMMENT ON COLUMN SILVER.ENCOUNTERS.DISCHARGE_DATE IS 'Discharge date for inpatient stays (YYYY-MM-DD). NULL for outpatient.';
 COMMENT ON COLUMN SILVER.ENCOUNTERS.ENCOUNTER_TYPE IS 'Visit type: Outpatient, Emergency, Inpatient, or Telehealth.';
@@ -171,7 +171,7 @@ COMMENT ON TABLE SILVER.CHARGES IS
     'One encounter may have multiple charge lines. FK: ENCOUNTER_ID.';
 
 COMMENT ON COLUMN SILVER.CHARGES.CHARGE_ID IS 'Unique charge line identifier. Primary key.';
-COMMENT ON COLUMN SILVER.CHARGES.ENCOUNTER_ID IS 'FK → SILVER.ENCOUNTERS. The visit that generated this charge.';
+COMMENT ON COLUMN SILVER.CHARGES.ENCOUNTER_ID IS 'FK -> SILVER.ENCOUNTERS. The visit that generated this charge.';
 COMMENT ON COLUMN SILVER.CHARGES.CPT_CODE IS 'Current Procedural Terminology code (e.g. 99213 for office visit).';
 COMMENT ON COLUMN SILVER.CHARGES.CPT_DESCRIPTION IS 'Human-readable description of the CPT procedure.';
 COMMENT ON COLUMN SILVER.CHARGES.UNITS IS 'Number of units billed (default 1).';
@@ -186,9 +186,9 @@ COMMENT ON TABLE SILVER.CLAIMS IS
     'request for payment to a payer. FK: ENCOUNTER_ID, PATIENT_ID, PAYER_ID.';
 
 COMMENT ON COLUMN SILVER.CLAIMS.CLAIM_ID IS 'Unique claim identifier. Primary key.';
-COMMENT ON COLUMN SILVER.CLAIMS.ENCOUNTER_ID IS 'FK → SILVER.ENCOUNTERS. The visit this claim covers.';
-COMMENT ON COLUMN SILVER.CLAIMS.PATIENT_ID IS 'FK → SILVER.PATIENTS. The patient whose services are being billed.';
-COMMENT ON COLUMN SILVER.CLAIMS.PAYER_ID IS 'FK → SILVER.PAYERS. The insurance company being billed.';
+COMMENT ON COLUMN SILVER.CLAIMS.ENCOUNTER_ID IS 'FK -> SILVER.ENCOUNTERS. The visit this claim covers.';
+COMMENT ON COLUMN SILVER.CLAIMS.PATIENT_ID IS 'FK -> SILVER.PATIENTS. The patient whose services are being billed.';
+COMMENT ON COLUMN SILVER.CLAIMS.PAYER_ID IS 'FK -> SILVER.PAYERS. The insurance company being billed.';
 COMMENT ON COLUMN SILVER.CLAIMS.DATE_OF_SERVICE IS 'Date the healthcare service was rendered (YYYY-MM-DD).';
 COMMENT ON COLUMN SILVER.CLAIMS.SUBMISSION_DATE IS 'Date the claim was submitted to the payer (YYYY-MM-DD).';
 COMMENT ON COLUMN SILVER.CLAIMS.TOTAL_CHARGE_AMOUNT IS 'Total billed amount for the claim in USD.';
@@ -203,8 +203,8 @@ COMMENT ON TABLE SILVER.PAYMENTS IS
     'multiple payments (payer portion + patient responsibility). FK: CLAIM_ID, PAYER_ID.';
 
 COMMENT ON COLUMN SILVER.PAYMENTS.PAYMENT_ID IS 'Unique payment identifier. Primary key.';
-COMMENT ON COLUMN SILVER.PAYMENTS.CLAIM_ID IS 'FK → SILVER.CLAIMS. The claim this payment applies to.';
-COMMENT ON COLUMN SILVER.PAYMENTS.PAYER_ID IS 'FK → SILVER.PAYERS. The payer who sent remittance. "PATIENT" for patient payments.';
+COMMENT ON COLUMN SILVER.PAYMENTS.CLAIM_ID IS 'FK -> SILVER.CLAIMS. The claim this payment applies to.';
+COMMENT ON COLUMN SILVER.PAYMENTS.PAYER_ID IS 'FK -> SILVER.PAYERS. The payer who sent remittance. "PATIENT" for patient payments.';
 COMMENT ON COLUMN SILVER.PAYMENTS.PAYMENT_AMOUNT IS 'Amount paid by the payer for this claim in USD.';
 COMMENT ON COLUMN SILVER.PAYMENTS.ALLOWED_AMOUNT IS 'Contracted allowed amount per payer agreement in USD.';
 COMMENT ON COLUMN SILVER.PAYMENTS.PAYMENT_DATE IS 'Date payment was received (YYYY-MM-DD).';
@@ -217,7 +217,7 @@ COMMENT ON TABLE SILVER.DENIALS IS
     'Used for denial rate analysis and recovery tracking. FK: CLAIM_ID.';
 
 COMMENT ON COLUMN SILVER.DENIALS.DENIAL_ID IS 'Unique denial record identifier. Primary key.';
-COMMENT ON COLUMN SILVER.DENIALS.CLAIM_ID IS 'FK → SILVER.CLAIMS. The claim that was denied.';
+COMMENT ON COLUMN SILVER.DENIALS.CLAIM_ID IS 'FK -> SILVER.CLAIMS. The claim that was denied.';
 COMMENT ON COLUMN SILVER.DENIALS.DENIAL_REASON_CODE IS 'Standardized denial reason code (e.g. AUTH, ELIG, COB, CODING, TIMELY, DUP, MEDICAL).';
 COMMENT ON COLUMN SILVER.DENIALS.DENIAL_REASON_DESCRIPTION IS 'Human-readable denial reason (e.g. Prior Authorization Required).';
 COMMENT ON COLUMN SILVER.DENIALS.DENIAL_DATE IS 'Date the denial was received (YYYY-MM-DD).';
@@ -232,7 +232,7 @@ COMMENT ON TABLE SILVER.ADJUSTMENTS IS
     'Essential for Net Collection Rate calculation. FK: CLAIM_ID.';
 
 COMMENT ON COLUMN SILVER.ADJUSTMENTS.ADJUSTMENT_ID IS 'Unique adjustment identifier. Primary key.';
-COMMENT ON COLUMN SILVER.ADJUSTMENTS.CLAIM_ID IS 'FK → SILVER.CLAIMS. The claim this adjustment applies to.';
+COMMENT ON COLUMN SILVER.ADJUSTMENTS.CLAIM_ID IS 'FK -> SILVER.CLAIMS. The claim this adjustment applies to.';
 COMMENT ON COLUMN SILVER.ADJUSTMENTS.ADJUSTMENT_TYPE_CODE IS 'Adjustment category: CONTRACTUAL, WRITEOFF, ADMIN, PROMPT_PAY, CHARITY, or SMALL_BAL.';
 COMMENT ON COLUMN SILVER.ADJUSTMENTS.ADJUSTMENT_TYPE_DESCRIPTION IS 'Human-readable adjustment type description.';
 COMMENT ON COLUMN SILVER.ADJUSTMENTS.ADJUSTMENT_AMOUNT IS 'Adjustment amount in USD.';
@@ -291,7 +291,7 @@ COMMENT ON TABLE METADATA.KPI_CATALOG IS
 
 ALTER TABLE METADATA.SEMANTIC_LAYER SET TAG DATA_LAYER = 'metadata', DATA_DOMAIN = 'semantic';
 COMMENT ON TABLE METADATA.SEMANTIC_LAYER IS
-    'Business concept → KPI → Silver column mappings. 21 mappings used by Cortex Analyst '
+    'Business concept -> KPI -> Silver column mappings. 21 mappings used by Cortex Analyst '
     'to translate natural language questions into SQL.';
 
 ALTER TABLE METADATA.KG_NODES SET TAG DATA_LAYER = 'metadata', DATA_DOMAIN = 'knowledge_graph';

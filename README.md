@@ -78,7 +78,7 @@ pip install -r requirements.txt
 python generate_sample_data.py
 ```
 
-This creates 10 CSV files in the `data/` directory covering Jan 2024 – Dec 2025:
+This creates 10 CSV files in the `data/` directory covering a rolling 2-year window ending today:
 
 | File | Rows | Source System | Description |
 |------|------|---------------|-------------|
@@ -91,7 +91,7 @@ This creates 10 CSV files in the `data/` directory covering Jan 2024 – Dec 202
 | `payments.csv` | ~3,200 | Clearinghouse / ERA | Payments with allowed amount and accuracy flags |
 | `denials.csv` | ~400 | Clearinghouse / ERA | Denial records with appeal tracking |
 | `adjustments.csv` | 600 | Billing System | Contractual, writeoff, and charity adjustments |
-| `operating_costs.csv` | 24 | ERP / Finance | Monthly RCM operational costs |
+| `operating_costs.csv` | ~25 | ERP / Finance | Monthly RCM operational costs |
 
 Upload these CSVs to the Snowflake internal stage `@RCM_ANALYTICS.STAGING.RCM_STAGE` via Snowsight UI or SnowSQL, then run the ETL stored procedure to load them through the medallion pipeline (Bronze → Silver → Gold).
 
@@ -113,8 +113,10 @@ PUT file:///path/to/data/*.csv @RCM_ANALYTICS.STAGING.RCM_STAGE;
 snow sql -f snowflake/etl/load_stage_to_bronze.sql
 snow sql -q "CALL RCM_ANALYTICS.STAGING.SP_BRONZE_TO_SILVER();"
 
-# Seed metadata and catalog
+# Seed metadata (KPI definitions, semantic layer, knowledge graph)
 snow sql -f snowflake/etl/seed_metadata.sql
+
+# Apply Horizon Data Catalog (tags, column comments, PII classification)
 snow sql -f snowflake/catalog/tags_and_comments.sql
 
 # Stage Cortex Analyst semantic model
@@ -187,6 +189,20 @@ A `pipeline_runs` metadata table records the last load time, row count, and sour
 | `gold_department_performance` | Revenue, encounter count, and revenue-per-encounter by department |
 | `gold_ar_aging` | Outstanding AR grouped into 0–30, 31–60, 61–90, 91–120, 120+ day buckets |
 | `gold_denial_analysis` | Denial volume, dollars denied, and recovery rate by reason code |
+
+### Horizon Data Catalog
+
+The `snowflake/catalog/tags_and_comments.sql` script populates the Snowflake Horizon Data Catalog so all tables, views, and columns are discoverable in Snowsight — accessible to everyone in the organization, not just Streamlit app users.
+
+| Feature | Coverage |
+|---------|----------|
+| **Database & schema comments** | All 5 schemas described with their medallion layer purpose |
+| **Table/view comments** | All 25 objects (10 Bronze + 10 Silver + 5 Gold) with source system and relationship info |
+| **Column comments** | Every column in the Silver layer has a description (data type, business meaning, FK references) |
+| **Classification tags** | `DATA_LAYER` (bronze/silver/gold), `DATA_DOMAIN` (claims/payments/…), `SENSITIVITY` (PII/PHI/public) |
+| **PII identification** | Patient name, DOB, ZIP code, and member ID tagged as PII in both Bronze and Silver |
+
+Browse the catalog in Snowsight: **Data > Databases > RCM_ANALYTICS** — click any table to see column descriptions, tags, and lineage.
 
 ### Filtering with FilterParams
 
