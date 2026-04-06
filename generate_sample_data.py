@@ -89,9 +89,10 @@ NUM_PAYMENTS = 2200  # Base count (actual count varies by claim status)
 NUM_DENIALS = 420  # ~15% of claims get denied
 NUM_ADJUSTMENTS = 600  # ~21% of claims have adjustments
 
-# Date range for generated data (2 full calendar years)
-START_DATE = datetime(2024, 1, 1)
-END_DATE = datetime(2025, 12, 31)
+# Date range for generated data (2 full calendar years ending today)
+# Dynamic so A/R aging buckets always have recent data.
+END_DATE = datetime.today()
+START_DATE = datetime(END_DATE.year - 2, END_DATE.month, 1)
 
 # ===========================================================================
 # Payer (Insurance) Reference Data
