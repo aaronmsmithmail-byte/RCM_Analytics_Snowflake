@@ -65,17 +65,9 @@ def _cte(p: FilterParams):
 
 def _query(sql):
     """Execute SQL via Snowpark and return a pandas DataFrame with lowercase columns."""
-    import decimal
-
     session = _get_session()
     df = session.sql(sql).to_pandas()
     df.columns = [c.lower() for c in df.columns]
-    # Coerce Decimal → float for columns that Snowpark returns as decimal.Decimal.
-    # Only target actual Decimal columns to avoid converting string codes (e.g.
-    # cpt_code "99213") into integers, which breaks string concatenation.
-    for col in df.columns:
-        if len(df) > 0 and isinstance(df[col].dropna().iloc[0] if not df[col].dropna().empty else None, decimal.Decimal):
-            df[col] = df[col].astype(float)
     return df
 
 
@@ -1050,7 +1042,10 @@ _DOMAIN_LABELS = {
 
 
 def query_data_freshness():
-    sql = "SELECT domain, last_loaded_at, row_count, source_file FROM RCM_ANALYTICS.METADATA.PIPELINE_RUNS ORDER BY domain"
+    sql = (
+        "SELECT domain, last_loaded_at, row_count, source_file"
+        " FROM RCM_ANALYTICS.METADATA.PIPELINE_RUNS ORDER BY domain"
+    )
     df = _query(sql)
     if df.empty:
         return pd.DataFrame(
