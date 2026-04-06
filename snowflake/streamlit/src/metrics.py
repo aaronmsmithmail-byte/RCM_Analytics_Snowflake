@@ -64,10 +64,24 @@ def _cte(p: FilterParams):
 
 
 def _query(sql):
-    """Execute SQL via Snowpark and return a pandas DataFrame with lowercase columns."""
+    """Execute SQL via Snowpark and return a pandas DataFrame with lowercase columns.
+
+    Snowpark may return NUMBER-typed aggregation results (SUM, COUNT, etc.)
+    as ``decimal.Decimal`` objects.  These break numpy arithmetic, so we
+    convert any Decimal columns to float64.  VARCHAR columns (IDs, codes)
+    are left untouched because their first value will be ``str``, not Decimal.
+    """
+    import decimal
+
     session = _get_session()
     df = session.sql(sql).to_pandas()
     df.columns = [c.lower() for c in df.columns]
+    for col in df.columns:
+        try:
+            if isinstance(df[col].iloc[0], decimal.Decimal):
+                df[col] = df[col].astype(float)
+        except (IndexError, KeyError):
+            pass
     return df
 
 
