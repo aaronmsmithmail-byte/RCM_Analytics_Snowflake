@@ -65,14 +65,17 @@ def _cte(p: FilterParams):
 
 def _query(sql):
     """Execute SQL via Snowpark and return a pandas DataFrame with lowercase columns."""
+    import decimal
+
     session = _get_session()
     df = session.sql(sql).to_pandas()
     df.columns = [c.lower() for c in df.columns]
-    # Coerce numeric columns — Snowpark may return Decimal objects for
-    # NUMBER/FLOAT columns which break numpy arithmetic (np.where, division).
+    # Coerce Decimal → float for columns that Snowpark returns as decimal.Decimal.
+    # Only target actual Decimal columns to avoid converting string codes (e.g.
+    # cpt_code "99213") into integers, which breaks string concatenation.
     for col in df.columns:
-        if col != "period":
-            df[col] = pd.to_numeric(df[col], errors="ignore")
+        if len(df) > 0 and isinstance(df[col].dropna().iloc[0] if not df[col].dropna().empty else None, decimal.Decimal):
+            df[col] = df[col].astype(float)
     return df
 
 
