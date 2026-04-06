@@ -134,7 +134,7 @@ python generate_sample_data.py   # generates data/ CSVs
 See `.claude/skills/standards.md` for the complete reference.
 
 - All Snowflake SQL uses uppercase identifiers (SILVER.CLAIMS, not silver_claims)
-- Date formatting: `TO_CHAR(TRY_TO_DATE(x), 'YYYY-MM')` (not strftime)
+- Date formatting: `TO_CHAR(TRY_TO_DATE(x, 'YYYY-MM-DD'), 'YYYY-MM')` (always specify format; not strftime)
 - Date arithmetic: `DATEDIFF('day', start, end)` (not date_diff or julianday)
 - Type casting: `TRY_CAST(x AS FLOAT)` (not CAST AS REAL)
 - Current date: `CURRENT_DATE()` (not CURRENT_DATE)

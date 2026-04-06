@@ -68,6 +68,11 @@ def _query(sql):
     session = _get_session()
     df = session.sql(sql).to_pandas()
     df.columns = [c.lower() for c in df.columns]
+    # Coerce numeric columns — Snowpark may return Decimal objects for
+    # NUMBER/FLOAT columns which break numpy arithmetic (np.where, division).
+    for col in df.columns:
+        if col != "period":
+            df[col] = pd.to_numeric(df[col], errors="ignore")
     return df
 
 
@@ -92,16 +97,16 @@ def query_days_in_ar(p: FilterParams):
         cte
         + """
 , monthly_charges AS (
-    SELECT TO_CHAR(TRY_TO_DATE(date_of_service), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            SUM(total_charge_amount) AS charges
     FROM filtered_claims
-    GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service), 'YYYY-MM')
+    GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
-    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(p.payment_amount), 0) AS payments
     FROM filtered_claims fc
     LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM')
+    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 )
 SELECT c.period, c.charges, COALESCE(mp.payments, 0) AS payments
 FROM monthly_charges c
@@ -131,23 +136,23 @@ def query_net_collection_rate(p: FilterParams):
         cte
         + """
 , monthly_charges AS (
-    SELECT TO_CHAR(TRY_TO_DATE(date_of_service), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            SUM(total_charge_amount) AS charges
     FROM filtered_claims
-    GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service), 'YYYY-MM')
+    GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
-    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(p.payment_amount), 0) AS payments
     FROM filtered_claims fc
     LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM')
+    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_contractual AS (
-    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(CASE WHEN a.adjustment_type_code = 'CONTRACTUAL'
                              THEN a.adjustment_amount ELSE 0 END), 0) AS contractual_adj
     FROM filtered_claims fc
     LEFT JOIN RCM_ANALYTICS.SILVER.ADJUSTMENTS a ON fc.claim_id = a.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM')
+    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 )
 SELECT c.period, c.charges, COALESCE(mp.payments, 0) AS payments,
        COALESCE(mc.contractual_adj, 0) AS contractual_adj
@@ -183,16 +188,16 @@ def query_gross_collection_rate(p: FilterParams):
         cte
         + """
 , monthly_charges AS (
-    SELECT TO_CHAR(TRY_TO_DATE(date_of_service), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            SUM(total_charge_amount) AS charges
     FROM filtered_claims
-    GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service), 'YYYY-MM')
+    GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
-    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(p.payment_amount), 0) AS payments
     FROM filtered_claims fc
     LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM')
+    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 )
 SELECT c.period, c.charges, COALESCE(mp.payments, 0) AS payments
 FROM monthly_charges c
@@ -221,11 +226,11 @@ def query_clean_claim_rate(p: FilterParams):
     sql = (
         cte
         + """
-SELECT TO_CHAR(TRY_TO_DATE(submission_date), 'YYYY-MM') AS period,
+SELECT TO_CHAR(TRY_TO_DATE(submission_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
        COUNT(*) AS total_claims,
        SUM(is_clean_claim) AS clean_claims
 FROM filtered_claims
-GROUP BY TO_CHAR(TRY_TO_DATE(submission_date), 'YYYY-MM')
+GROUP BY TO_CHAR(TRY_TO_DATE(submission_date, 'YYYY-MM-DD'), 'YYYY-MM')
 ORDER BY period
 """
     )
@@ -250,11 +255,11 @@ def query_denial_rate(p: FilterParams):
     sql = (
         cte
         + """
-SELECT TO_CHAR(TRY_TO_DATE(submission_date), 'YYYY-MM') AS period,
+SELECT TO_CHAR(TRY_TO_DATE(submission_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
        COUNT(*) AS total_claims,
        SUM(CASE WHEN claim_status IN ('Denied', 'Appealed') THEN 1 ELSE 0 END) AS denied_claims
 FROM filtered_claims
-GROUP BY TO_CHAR(TRY_TO_DATE(submission_date), 'YYYY-MM')
+GROUP BY TO_CHAR(TRY_TO_DATE(submission_date, 'YYYY-MM-DD'), 'YYYY-MM')
 ORDER BY period
 """
     )
@@ -318,11 +323,11 @@ def query_first_pass_rate(p: FilterParams):
     sql = (
         cte
         + """
-SELECT TO_CHAR(TRY_TO_DATE(submission_date), 'YYYY-MM') AS period,
+SELECT TO_CHAR(TRY_TO_DATE(submission_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
        COUNT(*) AS total,
        SUM(CASE WHEN claim_status = 'Paid' THEN 1 ELSE 0 END) AS paid
 FROM filtered_claims
-GROUP BY TO_CHAR(TRY_TO_DATE(submission_date), 'YYYY-MM')
+GROUP BY TO_CHAR(TRY_TO_DATE(submission_date, 'YYYY-MM-DD'), 'YYYY-MM')
 ORDER BY period
 """
     )
@@ -347,8 +352,8 @@ def query_charge_lag(p: FilterParams):
     sql = (
         cte
         + """
-SELECT TO_CHAR(TRY_TO_DATE(ch.service_date), 'YYYY-MM') AS period,
-       DATEDIFF('day', TRY_TO_DATE(ch.service_date), TRY_TO_DATE(ch.post_date)) AS lag_days
+SELECT TO_CHAR(TRY_TO_DATE(ch.service_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
+       DATEDIFF('day', TRY_TO_DATE(ch.service_date, 'YYYY-MM-DD'), TRY_TO_DATE(ch.post_date, 'YYYY-MM-DD')) AS lag_days
 FROM RCM_ANALYTICS.SILVER.CHARGES ch
 WHERE ch.encounter_id IN (SELECT DISTINCT encounter_id FROM filtered_claims)
   AND ch.post_date IS NOT NULL
@@ -375,11 +380,11 @@ def query_cost_to_collect(p: FilterParams):
     sql = (
         cte
         + """
-SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM') AS period,
+SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
        COALESCE(SUM(p.payment_amount), 0) AS collections
 FROM filtered_claims fc
 LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
-GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM')
+GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ORDER BY period
 """
     )
@@ -413,7 +418,7 @@ def query_ar_aging(p: FilterParams):
 SELECT fc.claim_id,
        fc.date_of_service,
        fc.total_charge_amount - COALESCE(SUM(p.payment_amount), 0) AS ar_balance,
-       DATEDIFF('day', TRY_TO_DATE(fc.date_of_service), CURRENT_DATE()) AS days_outstanding
+       DATEDIFF('day', TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), CURRENT_DATE()) AS days_outstanding
 FROM filtered_claims fc
 LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
 GROUP BY fc.claim_id, fc.date_of_service, fc.total_charge_amount
@@ -537,7 +542,7 @@ def query_avg_reimbursement(p: FilterParams):
     sql = (
         cte
         + """
-SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM') AS period,
+SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
        COALESCE(SUM(p.payment_amount), 0) AS payment_amount
 FROM filtered_claims fc
 LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
@@ -838,7 +843,7 @@ def query_underpayment_trend(p: FilterParams):
     sql = (
         cte
         + """
-SELECT TO_CHAR(TRY_TO_DATE(p.payment_date), 'YYYY-MM') AS period,
+SELECT TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
        SUM(p.allowed_amount) AS total_allowed,
        SUM(p.payment_amount) AS total_paid,
        SUM(CASE WHEN p.allowed_amount > p.payment_amount
@@ -846,7 +851,7 @@ SELECT TO_CHAR(TRY_TO_DATE(p.payment_date), 'YYYY-MM') AS period,
 FROM filtered_claims fc
 JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
 WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
-GROUP BY TO_CHAR(TRY_TO_DATE(p.payment_date), 'YYYY-MM')
+GROUP BY TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM')
 ORDER BY period
 """
     )
@@ -989,7 +994,7 @@ def query_patient_responsibility_trend(p: FilterParams):
     sql = (
         cte
         + """
-SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM') AS period,
+SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
        SUM(CASE WHEN p.allowed_amount > p.payment_amount
                 THEN p.allowed_amount - p.payment_amount ELSE 0 END) AS total_patient_resp,
        SUM(p.allowed_amount) AS total_allowed,
@@ -997,7 +1002,7 @@ SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM') AS period,
 FROM filtered_claims fc
 JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
 WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
-GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service), 'YYYY-MM')
+GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ORDER BY period
 """
     )
