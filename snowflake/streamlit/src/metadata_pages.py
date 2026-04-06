@@ -153,11 +153,34 @@ def _render_graphviz(dot):
 # ---------------------------------------------------------------------------
 
 
+@st.cache_data(ttl=600)
 def _query_meta(sql: str) -> pd.DataFrame:
     """
-    Run a SELECT against Snowflake and return a DataFrame.
+    Run a SELECT against Snowflake and return a cached DataFrame.
+
+    Results are cached for 10 minutes via ``@st.cache_data(ttl=600)``
+    to avoid redundant Snowflake round-trips when navigating between
+    metadata pages.
 
     Returns an empty DataFrame on any error so the page degrades gracefully.
+    """
+    try:
+        from snowflake.snowpark.context import get_active_session
+
+        session = get_active_session()
+        df = session.sql(sql).to_pandas()
+        df.columns = [c.lower() for c in df.columns]
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def _query_meta_nocache(sql: str) -> pd.DataFrame:
+    """
+    Run a SELECT against Snowflake without caching.
+
+    Used by pages that perform writes (e.g. Feature Backlog) and need
+    fresh reads after INSERT/UPDATE/DELETE operations.
     """
     try:
         from snowflake.snowpark.context import get_active_session
@@ -2513,8 +2536,8 @@ def render_feature_backlog():
     _PRIORITY_OPTIONS = ["Critical", "High", "Medium", "Low"]
     _STATUS_ICONS = {"Not Started": "⬜", "In Progress": "🔵", "Waiting for Review": "🟣", "Completed": "✅"}
 
-    # Load current items
-    df = _query_meta("""
+    # Load current items (uncached — this page performs writes)
+    df = _query_meta_nocache("""
         SELECT *
         FROM RCM_ANALYTICS.METADATA.FEATURE_BACKLOG
         ORDER BY
