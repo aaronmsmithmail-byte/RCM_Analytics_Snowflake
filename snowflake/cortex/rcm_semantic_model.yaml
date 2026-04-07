@@ -23,7 +23,7 @@ tables:
         synonyms:
           - claim number
           - claim
-        is_primary_key: true
+        unique: true
       - name: ENCOUNTER_ID
         description: Reference to the patient encounter that generated this claim
       - name: PATIENT_ID
@@ -112,7 +112,7 @@ tables:
     columns:
       - name: PAYMENT_ID
         description: Unique payment identifier
-        is_primary_key: true
+        unique: true
       - name: CLAIM_ID
         description: Reference to the claim this payment is for
       - name: PAYER_ID
@@ -170,7 +170,7 @@ tables:
     columns:
       - name: DENIAL_ID
         description: Unique denial identifier
-        is_primary_key: true
+        unique: true
       - name: CLAIM_ID
         description: Reference to the denied claim
       - name: DENIAL_REASON_CODE
@@ -223,7 +223,7 @@ tables:
     columns:
       - name: CHARGE_ID
         description: Unique charge line identifier
-        is_primary_key: true
+        unique: true
       - name: ENCOUNTER_ID
         description: Reference to the encounter
       - name: CPT_CODE
@@ -270,7 +270,7 @@ tables:
     columns:
       - name: ADJUSTMENT_ID
         description: Unique adjustment identifier
-        is_primary_key: true
+        unique: true
       - name: CLAIM_ID
         description: Reference to the adjusted claim
       - name: ADJUSTMENT_TYPE_CODE
@@ -312,7 +312,7 @@ tables:
     columns:
       - name: PERIOD
         description: "Month in YYYY-MM format"
-        is_primary_key: true
+        unique: true
         synonyms:
           - month
       - name: BILLING_STAFF_COST
@@ -348,7 +348,7 @@ tables:
     columns:
       - name: PAYER_ID
         description: Unique payer identifier
-        is_primary_key: true
+        unique: true
       - name: PAYER_NAME
         description: Insurance company name
         synonyms:
@@ -374,7 +374,7 @@ tables:
     columns:
       - name: PATIENT_ID
         description: Unique patient identifier
-        is_primary_key: true
+        unique: true
       - name: FIRST_NAME
         description: Patient first name (PII)
       - name: LAST_NAME
@@ -401,7 +401,7 @@ tables:
     columns:
       - name: PROVIDER_ID
         description: Unique provider identifier
-        is_primary_key: true
+        unique: true
       - name: PROVIDER_NAME
         description: Provider name (Dr. First Last)
         synonyms:
@@ -425,7 +425,7 @@ tables:
     columns:
       - name: ENCOUNTER_ID
         description: Unique encounter identifier
-        is_primary_key: true
+        unique: true
         synonyms:
           - visit
       - name: PATIENT_ID
