@@ -172,6 +172,7 @@ def _parse_analyst_response(session, response_json):
     message = response_json.get("message", response_json)
     content_blocks = message.get("content", [])
 
+    text_parts = []
     for block in content_blocks:
         if block.get("type") == "sql":
             result["type"] = "sql"
@@ -186,15 +187,36 @@ def _parse_analyst_response(session, response_json):
                 return result
         elif block.get("type") == "text":
             text = block.get("text", "")
-            if result["sql"]:
-                result["explanation"] = text
-            else:
-                result["content"] = text
+            if text:
+                text_parts.append(text)
 
     # Build combined content for display
-    if result["type"] == "sql" and result["explanation"]:
-        result["content"] = result["explanation"]
-    elif result["type"] == "sql" and not result["content"]:
+    if text_parts:
+        result["content"] = "\n\n".join(text_parts)
+    elif result["type"] == "sql" and result["results"] is not None:
+        # Cortex Analyst returned SQL only with no explanation —
+        # generate a brief summary from the results
+        df = result["results"]
+        n_rows = len(df)
+        n_cols = len(df.columns)
+        col_list = ", ".join(df.columns[:5])
+        if n_cols > 5:
+            col_list += f", ... ({n_cols - 5} more)"
+        summary = f"Query returned **{n_rows} row(s)** with columns: {col_list}."
+        # Add quick numeric highlights if available
+        numeric_cols = df.select_dtypes(include=["number"]).columns
+        if len(numeric_cols) > 0 and n_rows > 0:
+            highlights = []
+            for col in numeric_cols[:3]:
+                val = df[col].iloc[0]
+                if abs(val) >= 1000:
+                    highlights.append(f"{col}: {val:,.2f}")
+                else:
+                    highlights.append(f"{col}: {val}")
+            if highlights:
+                summary += " Top row: " + ", ".join(highlights) + "."
+        result["content"] = summary
+    else:
         result["content"] = "Here are the results:"
 
     return result
