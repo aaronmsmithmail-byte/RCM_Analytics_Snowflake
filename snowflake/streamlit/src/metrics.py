@@ -185,18 +185,18 @@ def query_net_collection_rate(p: FilterParams):
     FROM filtered_claims
     GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
-    SELECT TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(p.payment_amount), 0)::FLOAT AS payments
     FROM filtered_claims fc
-    JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM')
+    LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
+    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_contractual AS (
-    SELECT TO_CHAR(TRY_TO_DATE(a.adjustment_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(CASE WHEN a.adjustment_type_code = 'CONTRACTUAL'
                              THEN a.adjustment_amount ELSE 0 END), 0)::FLOAT AS contractual_adj
     FROM filtered_claims fc
-    JOIN RCM_ANALYTICS.SILVER.ADJUSTMENTS a ON fc.claim_id = a.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(a.adjustment_date, 'YYYY-MM-DD'), 'YYYY-MM')
+    LEFT JOIN RCM_ANALYTICS.SILVER.ADJUSTMENTS a ON fc.claim_id = a.claim_id
+    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 )
 SELECT c.period, c.charges, COALESCE(mp.payments, 0)::FLOAT AS payments,
        COALESCE(mc.contractual_adj, 0)::FLOAT AS contractual_adj
@@ -237,11 +237,11 @@ def query_gross_collection_rate(p: FilterParams):
     FROM filtered_claims
     GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
-    SELECT TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(p.payment_amount), 0)::FLOAT AS payments
     FROM filtered_claims fc
-    JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM')
+    LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
+    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 )
 SELECT c.period, c.charges, COALESCE(mp.payments, 0)::FLOAT AS payments
 FROM monthly_charges c
@@ -456,16 +456,19 @@ def query_ar_aging(p: FilterParams):
         {"claim_count": 0, "total_ar": 0.0, "pct_of_total": 0.0}, index=["0-30", "31-60", "61-90", "91-120", "120+"]
     )
     cte = _cte(p)
+    # Use the filter end date as the reference point for aging (not CURRENT_DATE)
+    # so results reflect the data range being analyzed
+    ref_date = f"TRY_TO_DATE('{p.end_date}', 'YYYY-MM-DD')"
     sql = (
         cte
-        + """
+        + f"""
 SELECT fc.claim_id,
        fc.date_of_service,
        fc.total_charge_amount - COALESCE(SUM(p.payment_amount), 0) AS ar_balance,
-       DATEDIFF('day', TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), CURRENT_DATE()) AS days_outstanding
+       DATEDIFF('day', TRY_TO_DATE(fc.submission_date, 'YYYY-MM-DD'), {ref_date}) AS days_outstanding
 FROM filtered_claims fc
 LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
-GROUP BY fc.claim_id, fc.date_of_service, fc.total_charge_amount
+GROUP BY fc.claim_id, fc.date_of_service, fc.submission_date, fc.total_charge_amount
 HAVING ar_balance > 0
 """
     )
