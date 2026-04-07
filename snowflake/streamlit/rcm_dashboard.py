@@ -1193,21 +1193,36 @@ with tab2:
     col_left, col_right = st.columns(2)
     with col_left:
         st.subheader("Collection Rates Over Time")
-        combined_trend = pd.DataFrame(
-            {
-                "Month": gcr_trend.index.tolist(),
-                "Gross Collection Rate": gcr_trend["gcr"].tolist(),
-                "Net Collection Rate": ncr_trend["ncr"].reindex(gcr_trend.index).fillna(0).tolist(),
-            }
+        gcr_vals = [float(v) for v in gcr_trend["gcr"].tolist()]
+        ncr_vals = [float(v) for v in ncr_trend["ncr"].reindex(gcr_trend.index).fillna(0).tolist()]
+        months = list(gcr_trend.index)
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(
+            go.Scatter(
+                x=months,
+                y=gcr_vals,
+                name="Gross Collection Rate",
+                line=dict(color=RCM_COLORS[0], width=2.5),
+            ),
+            secondary_y=False,
         )
-        fig = px.line(
-            combined_trend,
-            x="Month",
-            y=["Gross Collection Rate", "Net Collection Rate"],
-            color_discrete_sequence=[RCM_COLORS[0], RCM_COLORS[3]],
+        fig.add_trace(
+            go.Scatter(
+                x=months,
+                y=ncr_vals,
+                name="Net Collection Rate",
+                line=dict(color=RCM_COLORS[3], width=2.5),
+            ),
+            secondary_y=True,
         )
-        fig.update_traces(line_width=2.5)
-        fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis_title="%", plot_bgcolor="rgba(248,250,252,0.5)")
+        fig.update_yaxes(title_text="GCR (%)", secondary_y=False)
+        fig.update_yaxes(title_text="NCR (%)", secondary_y=True)
+        fig.update_layout(
+            height=350,
+            margin=dict(t=30, b=30),
+            plot_bgcolor="rgba(248,250,252,0.5)",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
         st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right:

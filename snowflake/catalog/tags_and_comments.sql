@@ -305,12 +305,12 @@ ALTER VIEW GOLD.MONTHLY_KPIS SET TAG DATA_LAYER = 'gold', DATA_DOMAIN = 'kpi';
 COMMENT ON VIEW GOLD.MONTHLY_KPIS IS 'Monthly KPI rollup -- claim counts, charges, payments, clean claim rate, denial rate, and gross collection rate aggregated by month. Source: SILVER.CLAIMS + SILVER.PAYMENTS.';
 
 ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN PERIOD COMMENT 'Month in YYYY-MM format used to group all KPIs by calendar month.';
-ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN TOTAL_CLAIMS COMMENT 'Total number of insurance claims submitted during the month.';
-ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN TOTAL_CHARGES COMMENT 'Sum of all billed charges in USD for the month.';
-ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN TOTAL_PAYMENTS COMMENT 'Sum of all payments received in USD for the month.';
-ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN CLEAN_CLAIM_RATE COMMENT 'Percentage of claims that passed all payer edits on first submission without errors.';
-ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN DENIAL_RATE COMMENT 'Percentage of claims that were denied by payers during the month.';
-ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN GROSS_COLLECTION_RATE COMMENT 'Total payments divided by total charges, expressed as a percentage. Measures overall collection efficiency.';
+ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN TOTAL_CLAIMS COMMENT '[Claims Quality] Total number of insurance claims submitted during the month. Formula: COUNT(CLAIM_ID). Benchmark: N/A (volume metric).';
+ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN TOTAL_CHARGES COMMENT '[Financial Performance] Sum of all billed charges in USD for the month. Formula: SUM(TOTAL_CHARGE_AMOUNT). Benchmark: N/A (volume metric).';
+ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN TOTAL_PAYMENTS COMMENT '[Financial Performance] Sum of all payments received in USD for the month. Formula: SUM(PAYMENT_AMOUNT). Benchmark: N/A (volume metric).';
+ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN CLEAN_CLAIM_RATE COMMENT '[Claims Quality] Percentage of claims that passed all payer edits on first submission. Formula: SUM(IS_CLEAN_CLAIM) / COUNT(*) * 100. Benchmark: >= 90%.';
+ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN DENIAL_RATE COMMENT '[Claims Quality] Percentage of claims that were denied by payers during the month. Formula: SUM(CASE WHEN CLAIM_STATUS IN (Denied, Appealed) THEN 1 ELSE 0 END) / COUNT(*) * 100. Benchmark: <= 10%.';
+ALTER VIEW GOLD.MONTHLY_KPIS ALTER COLUMN GROSS_COLLECTION_RATE COMMENT '[Financial Performance] Total payments divided by total charges as a percentage. Formula: SUM(PAYMENT_AMOUNT) / SUM(TOTAL_CHARGE_AMOUNT) * 100. Benchmark: > 70%.';
 
 ALTER VIEW GOLD.PAYER_PERFORMANCE SET TAG DATA_LAYER = 'gold', DATA_DOMAIN = 'payers';
 COMMENT ON VIEW GOLD.PAYER_PERFORMANCE IS 'Per-payer performance -- total claims, charges, payments, denial rate, and GCR by payer. Source: SILVER.PAYERS + SILVER.CLAIMS + SILVER.PAYMENTS.';
@@ -318,39 +318,39 @@ COMMENT ON VIEW GOLD.PAYER_PERFORMANCE IS 'Per-payer performance -- total claims
 ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN PAYER_ID COMMENT 'Unique insurance payer identifier.';
 ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN PAYER_NAME COMMENT 'Full name of the insurance company.';
 ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN PAYER_TYPE COMMENT 'Payer category: Commercial, Medicare, Medicaid, or Self-Pay.';
-ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN TOTAL_CLAIMS COMMENT 'Total number of claims submitted to this payer.';
-ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN TOTAL_CHARGES COMMENT 'Sum of all billed charges in USD for this payer.';
-ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN TOTAL_PAYMENTS COMMENT 'Sum of all payments received in USD from this payer.';
-ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN DENIAL_RATE COMMENT 'Percentage of claims denied by this payer. Lower is better; benchmark is under 10%.';
-ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN GROSS_COLLECTION_RATE COMMENT 'Total payments divided by total charges for this payer, as a percentage.';
+ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN TOTAL_CLAIMS COMMENT '[Segmentation] Total number of claims submitted to this payer. Formula: COUNT(CLAIM_ID) GROUP BY PAYER. Benchmark: N/A.';
+ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN TOTAL_CHARGES COMMENT '[Segmentation] Sum of all billed charges in USD for this payer. Formula: SUM(TOTAL_CHARGE_AMOUNT) GROUP BY PAYER. Benchmark: N/A.';
+ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN TOTAL_PAYMENTS COMMENT '[Segmentation] Sum of all payments received in USD from this payer. Formula: SUM(PAYMENT_AMOUNT) GROUP BY PAYER. Benchmark: N/A.';
+ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN DENIAL_RATE COMMENT '[Segmentation] Percentage of claims denied by this payer. Formula: denied_claims / total_claims * 100 GROUP BY PAYER. Benchmark: <= 10%.';
+ALTER VIEW GOLD.PAYER_PERFORMANCE ALTER COLUMN GROSS_COLLECTION_RATE COMMENT '[Segmentation] Total payments divided by total charges for this payer. Formula: SUM(PAYMENT_AMOUNT) / SUM(TOTAL_CHARGE_AMOUNT) * 100 GROUP BY PAYER. Benchmark: > 70%.';
 
 ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE SET TAG DATA_LAYER = 'gold', DATA_DOMAIN = 'encounters';
 COMMENT ON VIEW GOLD.DEPARTMENT_PERFORMANCE IS 'Per-department performance -- encounters, charges, payments, and revenue per encounter. Source: SILVER.ENCOUNTERS + SILVER.CHARGES + SILVER.CLAIMS + SILVER.PAYMENTS.';
 
 ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE ALTER COLUMN DEPARTMENT COMMENT 'Clinical department name (e.g. Cardiology, Emergency Medicine, Primary Care).';
-ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE ALTER COLUMN TOTAL_ENCOUNTERS COMMENT 'Total number of patient visits in this department.';
-ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE ALTER COLUMN TOTAL_CHARGES COMMENT 'Sum of all billed charges in USD for this department.';
-ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE ALTER COLUMN TOTAL_PAYMENTS COMMENT 'Sum of all payments received in USD for this department.';
-ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE ALTER COLUMN REVENUE_PER_ENCOUNTER COMMENT 'Average revenue generated per patient visit (total payments / total encounters). Key efficiency metric.';
+ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE ALTER COLUMN TOTAL_ENCOUNTERS COMMENT '[Segmentation] Total number of patient visits in this department. Formula: COUNT(ENCOUNTER_ID) GROUP BY DEPARTMENT. Benchmark: N/A.';
+ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE ALTER COLUMN TOTAL_CHARGES COMMENT '[Segmentation] Sum of all billed charges in USD for this department. Formula: SUM(TOTAL_CHARGE_AMOUNT) GROUP BY DEPARTMENT. Benchmark: N/A.';
+ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE ALTER COLUMN TOTAL_PAYMENTS COMMENT '[Segmentation] Sum of all payments received in USD for this department. Formula: SUM(PAYMENT_AMOUNT) GROUP BY DEPARTMENT. Benchmark: N/A.';
+ALTER VIEW GOLD.DEPARTMENT_PERFORMANCE ALTER COLUMN REVENUE_PER_ENCOUNTER COMMENT '[Financial Performance] Average revenue generated per patient visit. Formula: SUM(PAYMENT_AMOUNT) / COUNT(ENCOUNTER_ID). Benchmark: varies by department.';
 
 ALTER VIEW GOLD.AR_AGING SET TAG DATA_LAYER = 'gold', DATA_DOMAIN = 'claims';
 COMMENT ON VIEW GOLD.AR_AGING IS 'Accounts receivable aging buckets (0-30, 31-60, 61-90, 91-120, 120+ days). Shows claim count, total billed, collected, and outstanding balance per bucket. Source: SILVER.CLAIMS + SILVER.PAYMENTS. Excludes Paid claims.';
 
 ALTER VIEW GOLD.AR_AGING ALTER COLUMN AGING_BUCKET COMMENT 'Days-outstanding range for unpaid claims: 0-30, 31-60, 61-90, 91-120, or 120+ days.';
-ALTER VIEW GOLD.AR_AGING ALTER COLUMN CLAIM_COUNT COMMENT 'Number of unpaid claims in this aging bucket.';
-ALTER VIEW GOLD.AR_AGING ALTER COLUMN TOTAL_BILLED COMMENT 'Sum of billed charges in USD for claims in this aging bucket.';
-ALTER VIEW GOLD.AR_AGING ALTER COLUMN TOTAL_COLLECTED COMMENT 'Sum of partial payments already received in USD for claims in this bucket.';
-ALTER VIEW GOLD.AR_AGING ALTER COLUMN OUTSTANDING_BALANCE COMMENT 'Remaining balance owed in USD (total billed minus total collected). Higher balances in older buckets indicate collection risk.';
+ALTER VIEW GOLD.AR_AGING ALTER COLUMN CLAIM_COUNT COMMENT '[Recovery & Appeals] Number of unpaid claims in this aging bucket. Formula: COUNT(CLAIM_ID) WHERE ar_balance > 0. Benchmark: majority in 0-30 bucket.';
+ALTER VIEW GOLD.AR_AGING ALTER COLUMN TOTAL_BILLED COMMENT '[Recovery & Appeals] Sum of billed charges in USD for claims in this aging bucket. Formula: SUM(TOTAL_CHARGE_AMOUNT). Benchmark: N/A.';
+ALTER VIEW GOLD.AR_AGING ALTER COLUMN TOTAL_COLLECTED COMMENT '[Recovery & Appeals] Sum of partial payments already received in USD for claims in this bucket. Formula: SUM(PAYMENT_AMOUNT). Benchmark: N/A.';
+ALTER VIEW GOLD.AR_AGING ALTER COLUMN OUTSTANDING_BALANCE COMMENT '[Recovery & Appeals] Remaining balance owed in USD (total billed minus total collected). Formula: SUM(TOTAL_CHARGE_AMOUNT) - SUM(PAYMENT_AMOUNT). Benchmark: minimize 120+ bucket.';
 
 ALTER VIEW GOLD.DENIAL_ANALYSIS SET TAG DATA_LAYER = 'gold', DATA_DOMAIN = 'denials';
 COMMENT ON VIEW GOLD.DENIAL_ANALYSIS IS 'Denial reason analysis -- count, total denied, recovered, and appeal success rate by reason code. Source: SILVER.DENIALS.';
 
 ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN DENIAL_REASON_CODE COMMENT 'Standardized code for the denial reason (e.g. AUTH, ELIG, COB, CODING).';
 ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN DENIAL_REASON_DESCRIPTION COMMENT 'Human-readable description of the denial reason (e.g. Prior Authorization Required).';
-ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN DENIAL_COUNT COMMENT 'Total number of denials with this reason code.';
-ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN TOTAL_DENIED COMMENT 'Sum of denied dollar amounts in USD for this reason code.';
-ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN TOTAL_RECOVERED COMMENT 'Sum of dollars recovered through successful appeals for this reason code.';
-ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN APPEAL_SUCCESS_RATE COMMENT 'Percentage of appealed denials that were overturned (won). Higher rates indicate recoverable denial categories.';
+ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN DENIAL_COUNT COMMENT '[Recovery & Appeals] Total number of denials with this reason code. Formula: COUNT(*) GROUP BY DENIAL_REASON_CODE. Benchmark: N/A.';
+ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN TOTAL_DENIED COMMENT '[Recovery & Appeals] Sum of denied dollar amounts in USD for this reason code. Formula: SUM(DENIED_AMOUNT). Benchmark: minimize.';
+ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN TOTAL_RECOVERED COMMENT '[Recovery & Appeals] Sum of dollars recovered through successful appeals. Formula: SUM(RECOVERED_AMOUNT). Benchmark: maximize.';
+ALTER VIEW GOLD.DENIAL_ANALYSIS ALTER COLUMN APPEAL_SUCCESS_RATE COMMENT '[Recovery & Appeals] Percentage of appealed denials overturned. Formula: SUM(CASE WHEN APPEAL_STATUS = Won THEN 1 ELSE 0 END) / COUNT(appealed) * 100. Benchmark: > 50%.';
 
 -- =========================================================================
 -- 6. METADATA LAYER -- Table Tags & Comments
