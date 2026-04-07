@@ -1535,16 +1535,32 @@ with tab4:
         aging_df["Total A/R"] = [float(v) for v in aging_df["Total A/R"]]
         aging_df["% of Total"] = [float(v) for v in aging_df["% of Total"]]
         aging_df["Label"] = [f"{v:.1f}%" for v in aging_df["% of Total"]]
-        fig = px.bar(
-            aging_df,
-            x="Bucket",
-            y="Total A/R",
-            text="Label",
-            color="Bucket",
-            color_discrete_sequence=["#10B981", "#F59E0B", "#F97316", "#EF4444", "#991B1B"],
+        bucket_colors = {
+            "0-30": "#10B981",
+            "31-60": "#F59E0B",
+            "61-90": "#F97316",
+            "91-120": "#EF4444",
+            "120+": "#991B1B",
+        }
+        fig = go.Figure(
+            go.Bar(
+                x=list(aging_df["Bucket"]),
+                y=list(aging_df["Total A/R"]),
+                text=list(aging_df["Label"]),
+                textposition="outside",
+                marker_color=[bucket_colors.get(b, "#999") for b in aging_df["Bucket"]],
+                marker_line_width=0,
+                opacity=0.92,
+            )
         )
-        fig.update_traces(textposition="outside", marker_line_width=0, opacity=0.92)
-        fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False, plot_bgcolor="rgba(248,250,252,0.5)")
+        y_max = max(aging_df["Total A/R"]) * 1.2 if max(aging_df["Total A/R"]) > 0 else 1
+        fig.update_layout(
+            height=400,
+            margin=dict(t=30, b=30),
+            showlegend=False,
+            plot_bgcolor="rgba(248,250,252,0.5)",
+            yaxis=dict(range=[0, y_max], title="Total A/R ($)"),
+        )
         st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
     with col_right:
