@@ -148,10 +148,7 @@ def _call_analyst_via_rest(session, messages):
             error_detail = str(resp.get("content", ""))[:500]
         return {
             "type": "error",
-            "content": (
-                f"Cortex Analyst returned status {resp['status']}. "
-                f"{error_detail}"
-            ),
+            "content": (f"Cortex Analyst returned status {resp['status']}. {error_detail}"),
         }
 
 
