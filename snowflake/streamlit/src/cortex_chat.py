@@ -84,7 +84,7 @@ def send_analyst_message(session, user_question, message_history=None):
 
     # Call Cortex Analyst via the _snowflake REST API (primary path in SiS)
     try:
-        return _call_analyst_via_rest(session, messages)
+        return _call_analyst_via_rest(session, messages, user_question)
     except Exception as rest_err:
         # Fallback: try the SQL function approach
         try:
@@ -105,7 +105,7 @@ def send_analyst_message(session, user_question, message_history=None):
                 return {"type": "error", "content": "No response from Cortex Analyst"}
 
             response_json = json.loads(resp[0]["RESPONSE"])
-            return _parse_analyst_response(session, response_json)
+            return _parse_analyst_response(session, response_json, user_question)
         except Exception as sql_err:
             return {
                 "type": "error",
@@ -113,7 +113,7 @@ def send_analyst_message(session, user_question, message_history=None):
             }
 
 
-def _call_analyst_via_rest(session, messages):
+def _call_analyst_via_rest(session, messages, user_question=""):
     """
     Call Cortex Analyst via the internal REST API available in SiS.
 
@@ -139,7 +139,7 @@ def _call_analyst_via_rest(session, messages):
 
     if resp["status"] < 400:
         response_json = json.loads(resp["content"])
-        return _parse_analyst_response(session, response_json)
+        return _parse_analyst_response(session, response_json, user_question)
     else:
         # Surface the actual error body so users can diagnose the issue
         error_detail = ""
@@ -154,12 +154,60 @@ def _call_analyst_via_rest(session, messages):
         }
 
 
-def _parse_analyst_response(session, response_json):
+def _interpret_results(session, user_question, df):
+    """
+    Use Snowflake Cortex Complete to generate a business-friendly
+    interpretation of SQL query results.
+
+    Takes the user's original question and the result DataFrame,
+    and asks an LLM to explain the findings and provide recommendations.
+    """
+    # Truncate results to avoid token limits
+    max_rows = min(len(df), 20)
+    results_text = df.head(max_rows).to_string(index=False)
+    if len(df) > max_rows:
+        results_text += f"\n... ({len(df) - max_rows} more rows)"
+
+    prompt = f"""You are a Healthcare Revenue Cycle Management (RCM) analyst.
+A business user asked: "{user_question}"
+
+The query returned these results:
+{results_text}
+
+Provide a clear, concise response that:
+1. Directly answers the user's question in plain business language
+2. Highlights the key findings and any notable patterns
+3. Provides 1-2 actionable recommendations based on the data
+4. References specific numbers from the results
+
+Keep your response to 3-5 short paragraphs. Use markdown formatting."""
+
+    try:
+        escaped = prompt.replace("\\", "\\\\").replace("'", "''")
+        resp = session.sql(f"SELECT SNOWFLAKE.CORTEX.COMPLETE('mistral-large2', '{escaped}') AS RESPONSE").collect()
+        if resp and resp[0]["RESPONSE"]:
+            return resp[0]["RESPONSE"].strip()
+    except Exception:
+        pass
+
+    # Fallback: try a smaller model
+    try:
+        resp = session.sql(f"SELECT SNOWFLAKE.CORTEX.COMPLETE('mistral-large', '{escaped}') AS RESPONSE").collect()
+        if resp and resp[0]["RESPONSE"]:
+            return resp[0]["RESPONSE"].strip()
+    except Exception:
+        pass
+
+    return None
+
+
+def _parse_analyst_response(session, response_json, user_question=""):
     """
     Parse the Cortex Analyst response into a structured dict.
 
     Cortex Analyst responses contain a 'message' with 'content' blocks
-    that can be 'text' or 'sql' type.
+    that can be 'text' or 'sql' type. When SQL results are available,
+    uses Cortex Complete to generate a business-friendly interpretation.
     """
     result = {
         "type": "text",
@@ -172,6 +220,7 @@ def _parse_analyst_response(session, response_json):
     message = response_json.get("message", response_json)
     content_blocks = message.get("content", [])
 
+    text_parts = []
     for block in content_blocks:
         if block.get("type") == "sql":
             result["type"] = "sql"
@@ -186,15 +235,21 @@ def _parse_analyst_response(session, response_json):
                 return result
         elif block.get("type") == "text":
             text = block.get("text", "")
-            if result["sql"]:
-                result["explanation"] = text
-            else:
-                result["content"] = text
+            if text:
+                text_parts.append(text)
 
-    # Build combined content for display
-    if result["type"] == "sql" and result["explanation"]:
-        result["content"] = result["explanation"]
-    elif result["type"] == "sql" and not result["content"]:
+    # Generate business-friendly interpretation using Cortex Complete
+    if result["type"] == "sql" and result["results"] is not None:
+        interpretation = _interpret_results(session, user_question, result["results"])
+        if interpretation:
+            result["content"] = interpretation
+        elif text_parts:
+            result["content"] = "\n\n".join(text_parts)
+        else:
+            result["content"] = "Here are the results:"
+    elif text_parts:
+        result["content"] = "\n\n".join(text_parts)
+    else:
         result["content"] = "Here are the results:"
 
     return result

@@ -63,7 +63,7 @@ CSV files → Snowflake Internal Stage (@RCM_STAGE)
 3. Write a `query_*` function in `snowflake/streamlit/src/metrics.py`
 4. Call it in the relevant tab in `snowflake/streamlit/rcm_dashboard.py`
 5. Update `README.md`: increment the KPI count
-6. Add measures/columns to `snowflake/cortex/rcm_semantic_model.yaml`
+6. Add facts/metrics/dimensions to `snowflake/cortex/rcm_semantic_model.yaml`
 
 ### Adding a New Silver-Layer Data Entity
 
@@ -80,9 +80,21 @@ CSV files → Snowflake Internal Stage (@RCM_STAGE)
 
 ### Modifying the AI Assistant
 
+The AI Assistant uses a two-stage pipeline:
+1. **Cortex Analyst** (text-to-SQL) reads `rcm_semantic_model.yaml` to generate SQL
+2. **Cortex Complete** (`mistral-large2`) interprets results for business users
+
 - Update `snowflake/cortex/rcm_semantic_model.yaml` to change what Cortex Analyst understands
-- Update `snowflake/streamlit/src/cortex_chat.py` for chat UI changes
-- The semantic model YAML must be re-staged to `@RCM_STAGE/cortex/` after changes
+  - Semantic model uses `dimensions`, `facts`, `metrics`, `time_dimensions` (NOT `columns` or `measures`)
+  - Tables used in joins need `primary_key` and relationships need `join_type: left_outer`
+- Update `snowflake/streamlit/src/cortex_chat.py` for chat UI or LLM interpretation changes
+- The semantic model YAML must be re-staged to `@RCM_STAGE/cortex/` after changes:
+  ```sql
+  ALTER GIT REPOSITORY RCM_ANALYTICS.STAGING.RCM_REPO FETCH;
+  COPY FILES INTO @RCM_ANALYTICS.STAGING.RCM_STAGE/cortex/
+    FROM @RCM_ANALYTICS.STAGING.RCM_REPO/branches/main/snowflake/cortex/
+    PATTERN = '.*rcm_semantic_model\.yaml';
+  ```
 
 ### Adding a New Metadata Page
 
