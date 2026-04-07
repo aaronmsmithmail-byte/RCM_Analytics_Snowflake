@@ -991,62 +991,115 @@ _SEMANTIC_LAYER = _SEMANTIC_LAYER_FALLBACK
 
 
 def render_data_catalog():
-    """Searchable KPI catalog and data tables reference — data pulled live from RCM_ANALYTICS.METADATA.KPI_CATALOG."""
+    """Data Catalog — all content sourced from Snowflake Horizon Data Catalog."""
     st.title("Data Catalog")
     st.caption(
-        "Reference guide for all KPI metrics and data tables. Sourced live from the RCM_ANALYTICS.METADATA.KPI_CATALOG table."
+        "All catalog data sourced from the Snowflake Horizon Data Catalog "
+        "(INFORMATION_SCHEMA tables/columns with comments and tags applied via "
+        "snowflake/catalog/tags_and_comments.sql)."
     )
 
-    # ── KPI section — query RCM_ANALYTICS.METADATA.KPI_CATALOG from DB ──────────────────
+    # ── KPI Metrics — sourced from Horizon column comments on Gold views ──
     st.subheader("KPI Metrics Catalog")
+    st.caption(
+        "KPI definitions extracted from Horizon column comments on Gold views. "
+        "Comments follow the format: [Category] Definition. Formula: X. Benchmark: Y."
+    )
 
-    raw = _query_meta("""
-        SELECT metric_name,
-               category,
-               definition,
-               formula,
-               COALESCE(benchmark, '—') AS benchmark
-        FROM   RCM_ANALYTICS.METADATA.KPI_CATALOG
-        ORDER  BY category, metric_name
+    kpi_raw = _query_meta("""
+        SELECT TABLE_NAME,
+               COLUMN_NAME,
+               COALESCE(COMMENT, '') AS COMMENT
+        FROM   RCM_ANALYTICS.INFORMATION_SCHEMA.COLUMNS
+        WHERE  TABLE_CATALOG = 'RCM_ANALYTICS'
+          AND  TABLE_SCHEMA = 'GOLD'
+          AND  COMMENT LIKE '[%'
+        ORDER  BY TABLE_NAME, ORDINAL_POSITION
     """)
-    if raw.empty:
-        # Fallback to static list when DB isn't ready
-        raw = pd.DataFrame(_KPI_CATALOG_FALLBACK)
-        raw.columns = [c.lower() for c in raw.columns]
-        raw["benchmark"] = "—"
-        st.info("Live DB unavailable — showing static fallback catalog.")
 
-    total = len(raw)
+    if not kpi_raw.empty:
+        # Parse structured comments: [Category] Definition. Formula: X. Benchmark: Y.
+        records = []
+        for _, row in kpi_raw.iterrows():
+            comment = row["comment"] or ""
+            # Extract category from [Category] prefix
+            category = ""
+            definition = comment
+            if comment.startswith("[") and "]" in comment:
+                bracket_end = comment.index("]")
+                category = comment[1:bracket_end]
+                definition = comment[bracket_end + 1 :].strip()
+            # Extract formula
+            formula = ""
+            if "Formula:" in definition:
+                parts = definition.split("Formula:", 1)
+                definition = parts[0].strip().rstrip(".")
+                remainder = parts[1].strip()
+                if "Benchmark:" in remainder:
+                    formula_parts = remainder.split("Benchmark:", 1)
+                    formula = formula_parts[0].strip().rstrip(".")
+                    benchmark = formula_parts[1].strip().rstrip(".")
+                else:
+                    formula = remainder.rstrip(".")
+                    benchmark = ""
+            else:
+                benchmark = ""
+
+            metric_name = row["column_name"].replace("_", " ").title()
+            records.append(
+                {
+                    "metric_name": metric_name,
+                    "category": category,
+                    "definition": definition,
+                    "formula": formula,
+                    "benchmark": benchmark or "—",
+                    "gold_view": row["table_name"],
+                }
+            )
+        kpi_df = pd.DataFrame(records)
+    else:
+        # Fallback: query KPI_CATALOG table (Horizon-registered metadata table)
+        kpi_df = _query_meta("""
+            SELECT metric_name,
+                   category,
+                   definition,
+                   formula,
+                   COALESCE(benchmark, '—') AS benchmark
+            FROM   RCM_ANALYTICS.METADATA.KPI_CATALOG
+            ORDER  BY category, metric_name
+        """)
+        if kpi_df.empty:
+            kpi_df = pd.DataFrame(_KPI_CATALOG_FALLBACK)
+            kpi_df.columns = [c.lower() for c in kpi_df.columns]
+            kpi_df["benchmark"] = "—"
+            st.info("Horizon Data Catalog unavailable — showing static fallback.")
+
+    total = len(kpi_df)
     col1, col2 = st.columns([2, 1])
     with col1:
         search = st.text_input("Search metrics", placeholder="e.g. denial, collection, days...")
     with col2:
-        categories = ["All"] + sorted(raw["category"].dropna().unique().tolist())
+        categories = ["All"] + sorted(kpi_df["category"].dropna().unique().tolist())
         cat_filter = st.selectbox("Category", categories)
 
-    df = raw.copy()
+    df = kpi_df.copy()
     if search:
-        mask = (
-            df["metric_name"].str.contains(search, case=False, na=False)
-            | df["definition"].str.contains(search, case=False, na=False)
-            | df["formula"].str.contains(search, case=False, na=False)
-        )
+        mask = df.apply(lambda r: search.lower() in str(r.values).lower(), axis=1)
         df = df[mask]
     if cat_filter != "All":
         df = df[df["category"] == cat_filter]
 
-    st.dataframe(df, use_container_width=True)
+    display_cols = [
+        c for c in ["metric_name", "category", "definition", "formula", "benchmark", "gold_view"] if c in df.columns
+    ]
+    st.dataframe(df[display_cols], use_container_width=True)
     st.caption(f"{len(df)} of {total} metrics shown")
 
     st.divider()
 
-    # ── Data tables section — sourced from Snowflake Horizon Data Catalog ──
+    # ── Data Tables — sourced from Horizon INFORMATION_SCHEMA.TABLES ──
     st.subheader("Data Tables Catalog")
-    st.caption(
-        "Sourced from the Snowflake Horizon Data Catalog "
-        "(INFORMATION_SCHEMA.TABLES with comments applied via "
-        "snowflake/catalog/tags_and_comments.sql)."
-    )
+    st.caption("Sourced from INFORMATION_SCHEMA.TABLES — includes all Bronze, Silver, Gold, and Metadata objects.")
 
     horizon_df = _query_meta("""
         SELECT TABLE_SCHEMA,
@@ -1055,16 +1108,17 @@ def render_data_catalog():
                COALESCE(COMMENT, '') AS COMMENT
         FROM   RCM_ANALYTICS.INFORMATION_SCHEMA.TABLES
         WHERE  TABLE_CATALOG = 'RCM_ANALYTICS'
-          AND  TABLE_SCHEMA IN ('BRONZE', 'SILVER', 'GOLD')
+          AND  TABLE_SCHEMA IN ('BRONZE', 'SILVER', 'GOLD', 'METADATA')
         ORDER  BY CASE TABLE_SCHEMA
-                      WHEN 'BRONZE' THEN 1
-                      WHEN 'SILVER' THEN 2
-                      WHEN 'GOLD'   THEN 3
+                      WHEN 'BRONZE'   THEN 1
+                      WHEN 'SILVER'   THEN 2
+                      WHEN 'GOLD'     THEN 3
+                      WHEN 'METADATA' THEN 4
                   END,
                   TABLE_NAME
     """)
     if not horizon_df.empty:
-        layer_map = {"BRONZE": "Bronze", "SILVER": "Silver", "GOLD": "Gold"}
+        layer_map = {"BRONZE": "Bronze", "SILVER": "Silver", "GOLD": "Gold", "METADATA": "Metadata"}
         display_df = pd.DataFrame(
             {
                 "Layer": horizon_df["table_schema"].map(
@@ -1079,6 +1133,39 @@ def render_data_catalog():
     else:
         st.info("Live Horizon Data Catalog unavailable — showing static fallback catalog.")
         st.dataframe(pd.DataFrame(_TABLE_CATALOG), use_container_width=True)
+
+    st.divider()
+
+    # ── Column-Level Catalog — sourced from Horizon INFORMATION_SCHEMA.COLUMNS ──
+    st.subheader("Column-Level Catalog")
+    st.caption(
+        "Column descriptions from INFORMATION_SCHEMA.COLUMNS — populated via snowflake/catalog/tags_and_comments.sql."
+    )
+
+    col_schema = st.selectbox(
+        "Schema",
+        ["SILVER", "GOLD", "BRONZE", "METADATA"],
+        index=0,
+        key="col_catalog_schema",
+    )
+    col_df = _query_meta(f"""
+        SELECT TABLE_NAME,
+               COLUMN_NAME,
+               DATA_TYPE,
+               COALESCE(COMMENT, '') AS DESCRIPTION
+        FROM   RCM_ANALYTICS.INFORMATION_SCHEMA.COLUMNS
+        WHERE  TABLE_CATALOG = 'RCM_ANALYTICS'
+          AND  TABLE_SCHEMA  = '{col_schema}'
+        ORDER  BY TABLE_NAME, ORDINAL_POSITION
+    """)
+    if not col_df.empty:
+        col_search = st.text_input("Search columns", placeholder="e.g. claim_id, payment, date...", key="col_search")
+        if col_search:
+            col_df = col_df[col_df.apply(lambda r: col_search.lower() in str(r.values).lower(), axis=1)]
+        st.dataframe(col_df, use_container_width=True)
+        st.caption(f"{len(col_df)} columns in {col_schema} schema")
+    else:
+        st.info(f"No column metadata available for {col_schema} schema.")
 
 
 # ── Page 2: Data Lineage ──────────────────────────────────────────────
