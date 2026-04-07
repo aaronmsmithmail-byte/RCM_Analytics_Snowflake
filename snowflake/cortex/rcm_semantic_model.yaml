@@ -80,35 +80,42 @@ tables:
     measures:
       - name: total_claims
         expr: COUNT(DISTINCT CLAIM_ID)
+        data_type: NUMBER
         description: Total number of unique claims
         synonyms:
           - claim count
           - number of claims
       - name: total_charges
         expr: SUM(TOTAL_CHARGE_AMOUNT)
+        data_type: NUMBER
         description: Sum of all charge amounts in USD
         synonyms:
           - total billed
           - gross charges
       - name: denied_count
         expr: "SUM(CASE WHEN CLAIM_STATUS IN ('Denied', 'Appealed') THEN 1 ELSE 0 END)"
+        data_type: NUMBER
         description: Number of claims denied or appealed
       - name: clean_count
         expr: SUM(IS_CLEAN_CLAIM)
+        data_type: NUMBER
         description: Number of claims that passed payer edits on first submission
       - name: denial_rate
         expr: "SUM(CASE WHEN CLAIM_STATUS IN ('Denied', 'Appealed') THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(CLAIM_ID), 0)"
+        data_type: NUMBER
         description: "Percentage of claims denied — benchmark: ≤ 10%"
         synonyms:
           - deny rate
           - pct denied
       - name: clean_claim_rate
         expr: SUM(IS_CLEAN_CLAIM) * 100.0 / NULLIF(COUNT(CLAIM_ID), 0)
+        data_type: NUMBER
         description: "Percentage of clean claims — benchmark: ≥ 90%"
         synonyms:
           - first pass rate
       - name: avg_charge_lag
         expr: "AVG(DATEDIFF('day', TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD'), TRY_TO_DATE(SUBMISSION_DATE, 'YYYY-MM-DD')))"
+        data_type: NUMBER
         description: Average days between service and claim submission
         synonyms:
           - submission lag
@@ -176,23 +183,28 @@ tables:
     measures:
       - name: total_payments
         expr: SUM(PAYMENT_AMOUNT)
+        data_type: NUMBER
         description: Total payments collected in USD
         synonyms:
           - total collections
           - revenue collected
       - name: total_allowed
         expr: SUM(ALLOWED_AMOUNT)
+        data_type: NUMBER
         description: Total contracted allowed amounts in USD
       - name: payment_accuracy_rate
         expr: SUM(IS_ACCURATE_PAYMENT) * 100.0 / NULLIF(COUNT(*), 0)
+        data_type: NUMBER
         description: "Percentage of accurate payments — benchmark: ≥ 95%"
       - name: total_underpaid
         expr: "SUM(CASE WHEN PAYMENT_AMOUNT < ALLOWED_AMOUNT THEN ALLOWED_AMOUNT - PAYMENT_AMOUNT ELSE 0 END)"
+        data_type: NUMBER
         description: Total underpayment gap in USD
         synonyms:
           - underpayment amount
       - name: underpayment_rate
         expr: "SUM(CASE WHEN PAYMENT_AMOUNT < ALLOWED_AMOUNT THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0)"
+        data_type: NUMBER
         description: "Percentage of underpaid claims — benchmark: ≤ 5%"
     time_dimensions:
       - name: payment_date_time
@@ -252,17 +264,21 @@ tables:
     measures:
       - name: total_denials
         expr: COUNT(*)
+        data_type: NUMBER
         description: Total number of denials
         synonyms:
           - denial count
       - name: total_denied
         expr: SUM(DENIED_AMOUNT)
+        data_type: NUMBER
         description: Total dollars denied in USD
       - name: total_recovered
         expr: SUM(RECOVERED_AMOUNT)
+        data_type: NUMBER
         description: Total dollars recovered through appeals in USD
       - name: appeal_success_rate
         expr: "SUM(CASE WHEN APPEAL_STATUS = 'Won' THEN 1 ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN APPEAL_STATUS != 'Not Appealed' THEN 1 ELSE 0 END), 0)"
+        data_type: NUMBER
         description: Percentage of appealed denials successfully overturned
         synonyms:
           - appeal win rate
@@ -325,12 +341,15 @@ tables:
     measures:
       - name: total_charge_amount
         expr: SUM(CHARGE_AMOUNT)
+        data_type: NUMBER
         description: Sum of all line-item charges in USD
       - name: total_units
         expr: SUM(UNITS)
+        data_type: NUMBER
         description: Total units billed
       - name: charge_line_count
         expr: COUNT(*)
+        data_type: NUMBER
         description: Number of charge lines
     time_dimensions:
       - name: service_date_time
@@ -377,15 +396,18 @@ tables:
     measures:
       - name: total_adjustments
         expr: SUM(ADJUSTMENT_AMOUNT)
+        data_type: NUMBER
         description: Sum of all adjustments in USD
       - name: bad_debt_total
         expr: "SUM(CASE WHEN ADJUSTMENT_TYPE_CODE = 'WRITEOFF' THEN ADJUSTMENT_AMOUNT ELSE 0 END)"
+        data_type: NUMBER
         description: Total bad debt write-offs in USD
         synonyms:
           - write-offs
           - bad debt
       - name: contractual_total
         expr: "SUM(CASE WHEN ADJUSTMENT_TYPE_CODE = 'CONTRACTUAL' THEN ADJUSTMENT_AMOUNT ELSE 0 END)"
+        data_type: NUMBER
         description: Total contractual adjustments in USD
     time_dimensions:
       - name: adjustment_date_time
@@ -432,6 +454,7 @@ tables:
     measures:
       - name: total_rcm_cost
         expr: SUM(TOTAL_RCM_COST)
+        data_type: NUMBER
         description: Sum of all RCM operating costs in USD
         synonyms:
           - operating cost
@@ -563,6 +586,7 @@ tables:
     measures:
       - name: total_encounters
         expr: COUNT(DISTINCT ENCOUNTER_ID)
+        data_type: NUMBER
         description: Total number of unique encounters
         synonyms:
           - visit count
