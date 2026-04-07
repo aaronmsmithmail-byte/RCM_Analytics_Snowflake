@@ -1678,19 +1678,17 @@ def render_ai_architecture():
     """Process diagram: how the AI chat tab answers RCM questions."""
     st.title("AI Assistant Architecture")
     st.caption(
-        "How the AI chat tab combines the semantic layer, knowledge graph, "
-        "live KPI snapshot, and a real-time SQL tool loop to answer "
-        "natural-language RCM questions."
+        "How the AI Assistant tab uses Snowflake Cortex Analyst and Cortex Complete "
+        "to answer natural-language RCM questions with data-driven insights."
     )
 
     st.markdown("""
-Every AI response follows a **three-stage pipeline**:
+Every AI response follows a **two-stage pipeline**, both running entirely within Snowflake:
 
 | Stage | What happens |
 |-------|-------------|
-| **1 · Context assembly** | A system prompt is built fresh each turn from the four `meta_*` tables (KPI definitions, semantic mappings, entity descriptions, relationships) plus the current live KPI values and active sidebar filters. |
-| **2 · LLM reasoning** | The prompt + conversation history is sent to the selected model via Cortex Analyst.  The model decides whether to answer directly or call the `run_sql` tool. |
-| **3 · Tool-calling loop** | If data is needed, the model issues a `run_sql` call with a SELECT query.  The query executes against Snowflake, results are fed back, and the loop repeats until the model produces a final text answer. |
+| **1 · Text-to-SQL (Cortex Analyst)** | The user's question and conversation history are sent to Cortex Analyst along with a staged semantic model YAML. Cortex Analyst generates a SQL query and executes it against the Silver layer. |
+| **2 · Result Interpretation (Cortex Complete)** | The SQL results and original question are sent to a Cortex Complete LLM (mistral-large2). The LLM generates a business-friendly explanation with key findings and actionable recommendations. |
 """)
 
     # ── Process flow diagram ──────────────────────────────────────────
@@ -1709,10 +1707,10 @@ Every AI response follows a **three-stage pipeline**:
     dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded", penwidth="1.5")
     dot.attr("edge", fontname="Helvetica", fontsize="8", penwidth="1.2", arrowsize="0.8")
 
-    # ── Context Assembly cluster ─────────────────────────────────────
+    # ── Semantic Model cluster ──────────────────────────────────────
     with dot.subgraph(name="cluster_context") as c:
         c.attr(
-            label="CONTEXT ASSEMBLY",
+            label="SEMANTIC MODEL (staged YAML)",
             style="rounded,filled",
             color="#5b8dee",
             fontcolor="#1a3a8a",
@@ -1721,43 +1719,38 @@ Every AI response follows a **three-stage pipeline**:
             penwidth="2",
         )
         c.node(
-            "cube_api",
-            "Cube Semantic Layer\n(measures, dimensions, joins)",
-            shape="box3d",
+            "dimensions",
+            "Dimensions\n(IDs, codes, statuses)",
+            shape="box",
+            fillcolor="#dbeafe",
+            color="#5b8dee",
+        )
+        c.node(
+            "facts",
+            "Facts\n(amounts, counts)",
+            shape="box",
             fillcolor="#fef3c7",
             color="#e8a838",
         )
         c.node(
-            "neo4j_db",
-            "METADATA Schema\n(KG_NODES + KG_EDGES)",
-            shape="cylinder",
+            "metrics",
+            "Metrics\n(SUM, COUNT, AVG expressions)",
+            shape="box",
             fillcolor="#dcfce7",
             color="#38c172",
         )
         c.node(
-            "meta_kpi",
-            "RCM_ANALYTICS.METADATA.KPI_CATALOG\n(23 KPI definitions)",
-            shape="cylinder",
+            "relationships",
+            "Relationships\n(11 table joins)",
+            shape="box",
             fillcolor="#ede9fe",
             color="#9561e2",
         )
-        c.node(
-            "live_kpis", "Live KPI Snapshot\n(current filter values)", shape="box", fillcolor="#fef3c7", color="#e8a838"
-        )
-        c.node(
-            "sys_prompt",
-            "System Prompt",
-            shape="box",
-            fillcolor="#dbeafe",
-            color="#5b6af0",
-            fontsize="12",
-            penwidth="2.5",
-        )
 
-    # ── LLM Engine cluster ───────────────────────────────────────────
-    with dot.subgraph(name="cluster_llm") as c:
+    # ── Stage 1: Cortex Analyst ─────────────────────────────────────
+    with dot.subgraph(name="cluster_analyst") as c:
         c.attr(
-            label="LLM ENGINE",
+            label="STAGE 1: TEXT-TO-SQL (Cortex Analyst)",
             style="rounded,filled",
             color="#38c172",
             fontcolor="#166534",
@@ -1767,8 +1760,8 @@ Every AI response follows a **three-stage pipeline**:
         )
         c.node("user_q", "User Question", shape="parallelogram", fillcolor="#dbeafe", color="#5b8dee")
         c.node(
-            "llm",
-            "Cortex Analyst\n(Snowflake-native AI)",
+            "analyst",
+            "Cortex Analyst\n(_snowflake REST API)",
             shape="hexagon",
             fillcolor="#bbf7d0",
             color="#38c172",
@@ -1776,12 +1769,14 @@ Every AI response follows a **three-stage pipeline**:
             penwidth="2.5",
             width="2",
         )
-        c.node("final_ans", "Final Answer", shape="parallelogram", fillcolor="#dbeafe", color="#5b8dee")
+        c.node("gen_sql", "Generated SQL", shape="box", fillcolor="#fef3c7", color="#e8a838")
+        c.node("silver_db", "SILVER Schema\n(10 typed tables)", shape="cylinder", fillcolor="#e8e8e8", color="#7a7a7a")
+        c.node("results", "Query Results\n(DataFrame)", shape="box", fillcolor="#dcfce7", color="#38c172")
 
-    # ── SQL Tool Loop cluster ────────────────────────────────────────
-    with dot.subgraph(name="cluster_tool") as c:
+    # ── Stage 2: Cortex Complete ────────────────────────────────────
+    with dot.subgraph(name="cluster_interpret") as c:
         c.attr(
-            label="SQL TOOL LOOP  (up to 8 iterations)",
+            label="STAGE 2: INTERPRETATION (Cortex Complete)",
             style="rounded,filled",
             color="#f56b00",
             fontcolor="#7a3000",
@@ -1790,41 +1785,38 @@ Every AI response follows a **three-stage pipeline**:
             penwidth="2",
         )
         c.node(
-            "run_sql",
-            "run_sql() Tool\n(read-only SELECT/WITH)",
-            shape="box",
+            "llm",
+            "Cortex Complete\n(mistral-large2)",
+            shape="hexagon",
             fillcolor="#fed7aa",
             color="#f56b00",
+            fontsize="12",
             penwidth="2.5",
+            width="2",
         )
         c.node(
-            "silver_db", "silver_* Tables\n(10 typed tables)", shape="cylinder", fillcolor="#e8e8e8", color="#7a7a7a"
+            "explanation",
+            "Business Explanation\n+ Recommendations",
+            shape="parallelogram",
+            fillcolor="#dbeafe",
+            color="#5b8dee",
         )
-        c.node("gold_db", "gold_* Views\n(5 aggregated views)", shape="cylinder", fillcolor="#fff3c4", color="#B8860B")
-        c.node(
-            "meta_db", "meta_* Tables\n(4 AI-queryable tables)", shape="cylinder", fillcolor="#ede9fe", color="#9561e2"
-        )
 
-    # ── Edges: Context assembly ──────────────────────────────────────
-    # ── Edges: Context assembly ──────────────────────────────────────
-    dot.edge("cube_api", "sys_prompt", label="semantic mappings", color="#e8a838")
-    dot.edge("neo4j_db", "sys_prompt", label="schema + join paths", color="#38c172")
-    dot.edge("meta_kpi", "sys_prompt", label="KPI defs", color="#9561e2")
-    dot.edge("live_kpis", "sys_prompt", label="snapshot", color="#e8a838")
+    # ── Edges: Semantic model → Analyst ─────────────────────────────
+    dot.edge("dimensions", "analyst", label="schema context", color="#5b8dee")
+    dot.edge("facts", "analyst", label="numeric columns", color="#e8a838")
+    dot.edge("metrics", "analyst", label="aggregate defs", color="#38c172")
+    dot.edge("relationships", "analyst", label="join paths", color="#9561e2")
 
-    # ── Edges: LLM flow ──────────────────────────────────────────────
-    dot.edge("sys_prompt", "llm", label="context", color="#5b6af0")
-    dot.edge("user_q", "llm", label="question", color="#5b8dee")
-    dot.edge("llm", "final_ans", label="response", color="#38c172")
+    # ── Edges: Stage 1 flow ─────────────────────────────────────────
+    dot.edge("user_q", "analyst", label="question", color="#5b8dee")
+    dot.edge("analyst", "gen_sql", label="generates", color="#38c172")
+    dot.edge("gen_sql", "silver_db", label="executes", color="#7a7a7a")
+    dot.edge("silver_db", "results", label="returns rows", color="#7a7a7a")
 
-    # ── Edges: Tool calling loop ─────────────────────────────────────
-    dot.edge("llm", "run_sql", label="tool call →", color="#38c172")
-    dot.edge("run_sql", "llm", label="← results", color="#f56b00", style="dashed")
-
-    # ── Edges: Database access ───────────────────────────────────────
-    dot.edge("run_sql", "silver_db", label="SELECT", color="#7a7a7a")
-    dot.edge("run_sql", "gold_db", label="SELECT", color="#B8860B")
-    dot.edge("meta_db", "sys_prompt", label="Snowflake fallback", color="#9561e2", style="dashed")
+    # ── Edges: Stage 2 flow ─────────────────────────────────────────
+    dot.edge("results", "llm", label="data + question", color="#f56b00")
+    dot.edge("llm", "explanation", label="interprets", color="#f56b00")
 
     _render_graphviz(dot)
 
@@ -1834,95 +1826,64 @@ Every AI response follows a **three-stage pipeline**:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("#### Stage 1 — Context Assembly")
+        st.markdown("#### Stage 1 -- Cortex Analyst (Text-to-SQL)")
         st.markdown("""
-`build_system_prompt()` in `src/ai_chat.py` assembles context on every turn from three sources:
+`send_analyst_message()` in `src/cortex_chat.py` handles the Cortex Analyst integration:
 
-| Source | Content passed to LLM | Fallback |
-|--------|----------------------|----------|
-| **Cube** semantic layer | Measures, dimensions, joins, business rules | Snowflake `RCM_ANALYTICS.METADATA.SEMANTIC_LAYER` |
-| **Neo4j** knowledge graph | 10 entities, 11 FK relationships, schema descriptions | Snowflake `RCM_ANALYTICS.METADATA.KG_NODES` / `RCM_ANALYTICS.METADATA.KG_EDGES` |
-| Snowflake `RCM_ANALYTICS.METADATA.KPI_CATALOG` | 23 KPI names, formulas, categories, benchmarks | Static Python fallback |
+| Component | Details |
+|-----------|---------|
+| **API** | `_snowflake.send_snow_api_request("POST", "/api/v2/cortex/analyst/message")` |
+| **Semantic model** | `@RCM_STAGE/cortex/rcm_semantic_model.yaml` (staged YAML) |
+| **Model structure** | 10 tables: 7 with dimensions/facts/metrics, 3 dimension-only |
+| **Relationships** | 11 joins with `left_outer` join type and primary keys |
 
-The **live KPI snapshot** appends current metric values and active sidebar
-filter state so the model can answer "what is our denial rate right now?" without
-needing to query the database.
+Cortex Analyst reads the semantic model to understand the database schema,
+then translates the natural-language question into a SQL query targeting
+the Silver layer. The generated SQL is executed and results returned as a DataFrame.
 """)
 
     with col2:
-        st.markdown("#### Stage 2 — LLM Reasoning")
+        st.markdown("#### Stage 2 -- Cortex Complete (Interpretation)")
         st.markdown("""
-The assembled system prompt, full conversation history, and the `run_sql` tool
-schema are sent to **Cortex Analyst** in a single API call.
+`_interpret_results()` in `src/cortex_chat.py` sends the query results to a Cortex LLM:
 
-The model chooses one of two paths:
-- **Answer directly** — if the KPI snapshot already contains the answer
-- **Call `run_sql`** — if a breakdown, trend, or specific record is needed
+| Component | Details |
+|-----------|---------|
+| **Function** | `SNOWFLAKE.CORTEX.COMPLETE('mistral-large2', prompt)` |
+| **Fallback** | `mistral-large` if `mistral-large2` is unavailable |
+| **Prompt** | RCM analyst persona + user question + result data (up to 20 rows) |
+| **Output** | Business explanation, key findings, and 1-2 actionable recommendations |
 
-The tool-calling loop runs up to **8 iterations** per turn, allowing multi-step
-queries (e.g. fetch payer list → then query denial rates per payer).
+This stage transforms raw query results into the kind of insight a business
+user expects -- explaining what the numbers mean and what actions to take.
 """)
 
-    st.markdown("#### Stage 3 — SQL Tool Loop")
-    col3, col4 = st.columns(2)
-
-    with col3:
-        st.markdown("""
-**`execute_sql_tool()`** in `src/ai_chat.py`:
-
-- Accepts the query string from the model's tool call
-- Validates that it is a `SELECT` or `WITH` (CTE) statement — all other
-  statement types return an error without touching the database
-- Executes against the local Snowflake database
-- Caps results at **100 rows** to stay within LLM context limits
-- Returns structured `{columns, rows, row_count, total_rows, truncated}`
-
-The formatted results are appended to the conversation as a `role: tool`
-message, giving the model full visibility into what the query returned.
-""")
-
-    with col4:
-        st.markdown("""
-**What gets queried:**
-
-| Target | When used |
-|--------|-----------|
-| `silver_*` tables | Row-level lookups, custom joins, breakdowns not in Gold views |
-| `gold_*` views | Pre-aggregated KPIs — faster for summary questions |
-| `meta_*` tables | Queried at prompt-build time only (not via the tool) |
-
-**Query results in the UI:**
-
-Each `run_sql` call appears as a collapsible expander in the chat showing
-the exact SQL and a scrollable results table. Previous turns' queries are
-preserved in session state and re-rendered on page reload.
+    st.markdown("#### What Gets Queried")
+    st.markdown("""
+| Target | Tables | When used |
+|--------|--------|-----------|
+| **Silver schema** | CLAIMS, PAYMENTS, DENIALS, ENCOUNTERS, CHARGES, ADJUSTMENTS, PAYERS, PATIENTS, PROVIDERS, OPERATING_COSTS | All queries -- Cortex Analyst generates SQL against typed Silver tables |
+| **Semantic model** | `rcm_semantic_model.yaml` | Read by Cortex Analyst to understand schema, joins, and metric definitions |
 """)
 
     # ── Session state diagram ─────────────────────────────────────────
-    st.subheader("Session State & History Management")
+    st.subheader("Session State & Chat History")
     st.markdown("""
-Two parallel stores keep the AI tab stateful across Streamlit reruns:
+Chat state is managed in `st.session_state["analyst_messages"]`:
 
 ```
-st.session_state["ai_display_turns"]          st.session_state["ai_api_messages"]
-─────────────────────────────────────         ──────────────────────────────────────
-For rendering the chat UI                     For sending to the Cortex Analyst API
-
-[                                             [
-  {role: "user",    content: "..."},            {role: "user",    content: "..."},
-  {role: "assistant",                           {role: "assistant", content: "",
-   content: "Final answer text",                 tool_calls: [{id, fn, args}]},
-   queries: [                                  {role: "tool",
-     {description, sql,                         tool_call_id: "...",
-      columns, rows, truncated}                 content: "col1,col2\\nv1,v2\\n..."},
-   ]},                                         {role: "assistant",
-  ...                                           content: "Final answer text"},
-]                                             ]
-                                              (system prompt prepended fresh each turn)
+[
+  {role: "user",    content: "What are the top denial codes?"},
+  {role: "analyst", content: "Business explanation with findings...",
+   sql: "SELECT ... FROM SILVER.DENIALS ...",
+   results: <DataFrame>},
+  ...
+]
 ```
 
-The system prompt is **rebuilt on every turn** so new dashboard filter
-selections are automatically reflected in the AI's context.
+Each message stores the role, display content, generated SQL (if any),
+and the result DataFrame. The chat history is passed to Cortex Analyst
+on each turn for conversation continuity.
 """)
 
 

@@ -25,7 +25,7 @@ This dashboard provides healthcare organizations with interactive visualizations
 
 Every data tab includes **CSV and Excel export buttons**. A **KPI alert system** in the sidebar flags threshold breaches in real time, and a **data pipeline freshness panel** shows the last ETL run time and status for each of the 10 data domains.
 
-The **AI Assistant** tab uses Snowflake **Cortex Analyst** — ask natural-language questions and Cortex generates and executes SQL queries against the Silver layer using the staged semantic model YAML. No external API keys required.
+The **AI Assistant** tab uses a two-stage Snowflake-native AI pipeline — **Cortex Analyst** generates and executes SQL queries from natural-language questions using the staged semantic model YAML, then **Cortex Complete** (mistral-large2) interprets the results with business-friendly explanations and actionable recommendations. No external API keys required.
 
 ---
 
@@ -262,7 +262,7 @@ All configuration is handled through environment variables loaded from a `.env` 
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
 | `OPENROUTER_API_KEY` | — | Yes (AI tab only) | API key for the OpenRouter LLM gateway. Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys). All other tabs work without it. |
-| `OPENROUTER_MODEL` | `openai/gpt-4o-mini` | No | LLM model for the AI Assistant tab. Any model on [openrouter.ai/models](https://openrouter.ai/models) works. |
+| *(none required)* | — | — | The AI Assistant uses Snowflake Cortex AI functions (no external API keys needed). |
 | `AI_MAX_ROWS` | `100` | No | Maximum rows the AI tool returns per SQL query. Lower to reduce token cost; raise for wider result sets (min 10). |
 | `AI_MAX_ITERATIONS` | `8` | No | Maximum tool-call loop iterations per AI turn — one iteration = one SQL query + one LLM round-trip (min 1). |
 | `CUBE_API_URL` | `http://localhost:4000/cubejs-api/v1` | No | REST API URL for the Cube semantic layer. Metrics route through Cube when available; falls back to raw DuckDB SQL otherwise. |
@@ -387,14 +387,13 @@ Summary KPIs: total patient responsibility, patient responsibility rate (% of al
 
 ### Tab 12 — AI Assistant
 
-A conversational interface backed by an **agentic tool-calling loop**:
+A conversational interface powered by a **two-stage Snowflake-native AI pipeline**:
 
-1. A system prompt is built fresh each turn from the four `meta_*` tables (KPI definitions, semantic mappings, entity descriptions, relationships) plus the current live KPI values and active sidebar filters.
-2. The selected model (via OpenRouter) reasons over the context and decides whether to answer from the snapshot or call `run_sql()`.
-3. `run_sql()` executes a read-only SELECT/WITH query against the DuckDB database, returns structured results (capped at 100 rows), and feeds them back to the model.  The loop repeats until the model returns a final text response.
-4. Each SQL query issued by the model is shown in a collapsible expander with the exact SQL and a scrollable results table.
+1. **Cortex Analyst (text-to-SQL)** -- The user's question and conversation history are sent to the Cortex Analyst REST API along with a staged semantic model YAML (`@RCM_STAGE/cortex/rcm_semantic_model.yaml`). Cortex Analyst generates a SQL query and executes it against the Silver layer.
+2. **Cortex Complete (interpretation)** -- The SQL results and original question are sent to `SNOWFLAKE.CORTEX.COMPLETE('mistral-large2', ...)` which generates a business-friendly explanation with key findings and actionable recommendations.
+3. The generated SQL is shown in a collapsible expander, and the results are displayed in a scrollable data table below the interpretation.
 
-**Setup:** add `OPENROUTER_API_KEY=<your_key>` to a `.env` file in the project root and restart the app.  Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys).
+**No external API keys required** -- everything runs within Snowflake using Cortex AI functions.
 
 ### Metadata Pages (sidebar navigation)
 
@@ -402,7 +401,7 @@ A conversational interface backed by an **agentic tool-calling loop**:
 - **Data Lineage** — DAG diagram showing the full pipeline: CSV files → Bronze → Silver → Gold → Dashboard
 - **Knowledge Graph** — Entity-relationship diagram of the Silver-layer data model
 - **Semantic Layer** — Business concept → KPI → source table/column mapping for every metric
-- **AI Architecture** — Interactive process flow diagram showing how the AI chat tab assembles context from the semantic layer and knowledge graph, routes through the LLM, and executes live SQL queries to answer questions
+- **AI Architecture** — Process flow diagram showing the two-stage pipeline: Cortex Analyst (text-to-SQL via semantic model) and Cortex Complete (business interpretation of results)
 - **Business Process** — Revenue cycle process map with decision points (clean claim?, payer decision?, appeal?) and live KPI annotations at each step, linking business processes to the dashboard tabs that measure them
 
 ---
