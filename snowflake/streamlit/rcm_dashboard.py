@@ -2727,7 +2727,7 @@ with tab10:
                 fig.add_trace(
                     go.Scatter(
                         x=dar_future,
-                        y=dar_forecast_vals,
+                        y=[float(v) for v in dar_forecast_vals],
                         name="Projected DAR",
                         mode="lines+markers",
                         line=dict(color=RCM_COLORS[2], width=3, dash="dash"),
@@ -2735,10 +2735,12 @@ with tab10:
                     )
                 )
                 # Confidence band
+                upper = [float(v) for v in dar_forecast_vals + dar_std]
+                lower = [float(v) for v in (dar_forecast_vals - dar_std)[::-1]]
                 fig.add_trace(
                     go.Scatter(
                         x=dar_future + dar_future[::-1],
-                        y=list(dar_forecast_vals + dar_std) + list((dar_forecast_vals - dar_std)[::-1]),
+                        y=upper + lower,
                         fill="toself",
                         fillcolor="rgba(239,68,68,0.1)",
                         line=dict(color="rgba(0,0,0,0)"),
@@ -2802,17 +2804,19 @@ with tab10:
                 fig.add_trace(
                     go.Scatter(
                         x=dr_future,
-                        y=dr_forecast_vals,
+                        y=[float(v) for v in dr_forecast_vals],
                         name="Projected Denial Rate",
                         mode="lines+markers",
                         line=dict(color=RCM_COLORS[2], width=3, dash="dash"),
                         marker=dict(size=9, symbol="diamond"),
                     )
                 )
+                dr_upper = [float(v) for v in dr_forecast_vals + dr_std]
+                dr_lower = [float(v) for v in (dr_forecast_vals - dr_std)[::-1]]
                 fig.add_trace(
                     go.Scatter(
                         x=dr_future + dr_future[::-1],
-                        y=list(dr_forecast_vals + dr_std) + list((dr_forecast_vals - dr_std)[::-1]),
+                        y=dr_upper + dr_lower,
                         fill="toself",
                         fillcolor="rgba(239,68,68,0.1)",
                         line=dict(color="rgba(0,0,0,0)"),

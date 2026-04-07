@@ -461,76 +461,76 @@ relationships:
     left_table: CLAIMS
     right_table: ENCOUNTERS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: ENCOUNTER_ID
         right_column: ENCOUNTER_ID
   - name: claims_to_payers
     left_table: CLAIMS
     right_table: PAYERS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: PAYER_ID
         right_column: PAYER_ID
   - name: claims_to_patients
     left_table: CLAIMS
     right_table: PATIENTS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: PATIENT_ID
         right_column: PATIENT_ID
   - name: payments_to_claims
     left_table: PAYMENTS
     right_table: CLAIMS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: CLAIM_ID
         right_column: CLAIM_ID
   - name: payments_to_payers
     left_table: PAYMENTS
     right_table: PAYERS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: PAYER_ID
         right_column: PAYER_ID
   - name: denials_to_claims
     left_table: DENIALS
     right_table: CLAIMS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: CLAIM_ID
         right_column: CLAIM_ID
   - name: adjustments_to_claims
     left_table: ADJUSTMENTS
     right_table: CLAIMS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: CLAIM_ID
         right_column: CLAIM_ID
   - name: charges_to_encounters
     left_table: CHARGES
     right_table: ENCOUNTERS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: ENCOUNTER_ID
         right_column: ENCOUNTER_ID
   - name: encounters_to_patients
     left_table: ENCOUNTERS
     right_table: PATIENTS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: PATIENT_ID
         right_column: PATIENT_ID
   - name: encounters_to_providers
     left_table: ENCOUNTERS
     right_table: PROVIDERS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: PROVIDER_ID
         right_column: PROVIDER_ID
   - name: patients_to_payers
     left_table: PATIENTS
     right_table: PAYERS
     relationship_type: many_to_one
-    join_columns:
+    relationship_columns:
       - left_column: PRIMARY_PAYER_ID
         right_column: PAYER_ID

@@ -26,8 +26,8 @@ SUGGESTED_QUESTIONS = [
     "What are the top 5 denial reason codes by total denied amount?",
     "Show me monthly denial rate trend for the past 12 months.",
     "Which department generates the most revenue per encounter?",
-    "Explain Days in A/R and what's driving our current value.",
-    "How does the medallion architecture work in this database?",
+    "What is the average days in A/R by payer?",
+    "Show total charges and payments by month for the past year.",
 ]
 
 
@@ -95,8 +95,7 @@ def send_analyst_message(session, user_question, message_history=None):
             json_str = json.dumps(request_body).replace("\\", "\\\\").replace("'", "''")
             resp = session.sql(
                 f"""
-                SELECT SNOWFLAKE.CORTEX.COMPLETE(
-                    'analyst',
+                SELECT SNOWFLAKE.CORTEX.ANALYST(
                     PARSE_JSON('{json_str}')
                 ) AS RESPONSE
                 """
@@ -107,8 +106,11 @@ def send_analyst_message(session, user_question, message_history=None):
 
             response_json = json.loads(resp[0]["RESPONSE"])
             return _parse_analyst_response(session, response_json)
-        except Exception:
-            return {"type": "error", "content": f"Cortex Analyst error: {str(rest_err)}"}
+        except Exception as sql_err:
+            return {
+                "type": "error",
+                "content": f"Cortex Analyst error: {rest_err} (fallback: {sql_err})",
+            }
 
 
 def _call_analyst_via_rest(session, messages):
