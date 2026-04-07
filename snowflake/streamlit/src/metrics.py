@@ -465,7 +465,7 @@ def query_ar_aging(p: FilterParams):
 SELECT fc.claim_id,
        fc.date_of_service,
        fc.total_charge_amount - COALESCE(SUM(p.payment_amount), 0) AS ar_balance,
-       DATEDIFF('day', TRY_TO_DATE(fc.submission_date, 'YYYY-MM-DD'), {ref_date}) AS days_outstanding
+       DATEDIFF('day', TRY_TO_DATE(COALESCE(fc.submission_date, fc.date_of_service), 'YYYY-MM-DD'), {ref_date}) AS days_outstanding
 FROM filtered_claims fc
 LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
 GROUP BY fc.claim_id, fc.date_of_service, fc.submission_date, fc.total_charge_amount
