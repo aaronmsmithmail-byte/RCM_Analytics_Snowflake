@@ -20,6 +20,7 @@ tables:
     dimensions:
       - name: CLAIM_ID
         expr: CLAIM_ID
+        data_type: VARCHAR
         description: Unique claim identifier
         unique: true
         synonyms:
@@ -27,24 +28,30 @@ tables:
           - claim
       - name: ENCOUNTER_ID
         expr: ENCOUNTER_ID
+        data_type: VARCHAR
         description: Reference to the patient encounter that generated this claim
       - name: PATIENT_ID
         expr: PATIENT_ID
+        data_type: VARCHAR
         description: Reference to the patient who received services
       - name: PAYER_ID
         expr: PAYER_ID
+        data_type: VARCHAR
         description: Reference to the insurance payer billed
       - name: DATE_OF_SERVICE
         expr: DATE_OF_SERVICE
+        data_type: VARCHAR
         description: Date the healthcare service was rendered (YYYY-MM-DD)
         synonyms:
           - service date
           - DOS
       - name: SUBMISSION_DATE
         expr: SUBMISSION_DATE
+        data_type: VARCHAR
         description: Date the claim was submitted to the payer (YYYY-MM-DD)
       - name: TOTAL_CHARGE_AMOUNT
         expr: TOTAL_CHARGE_AMOUNT
+        data_type: NUMBER
         description: Total billed amount for the claim in USD
         synonyms:
           - charge amount
@@ -52,19 +59,23 @@ tables:
           - charges
       - name: CLAIM_STATUS
         expr: CLAIM_STATUS
+        data_type: VARCHAR
         description: "Current status: Paid, Partially Paid, Denied, Pending, or Appealed"
         synonyms:
           - status
       - name: IS_CLEAN_CLAIM
         expr: IS_CLEAN_CLAIM
+        data_type: NUMBER
         description: "Boolean (1/0): claim passed all payer edits on first submission"
         synonyms:
           - clean claim
       - name: SUBMISSION_METHOD
         expr: SUBMISSION_METHOD
+        data_type: VARCHAR
         description: How the claim was submitted (Electronic, Paper, Portal)
       - name: FAIL_REASON
         expr: FAIL_REASON
+        data_type: VARCHAR
         description: "Reason code if not a clean claim: MISSING_AUTH, ELIGIBILITY_FAIL, CODING_ERROR, etc."
     measures:
       - name: total_claims
@@ -105,11 +116,13 @@ tables:
     time_dimensions:
       - name: date_of_service_time
         expr: TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD')
+        data_type: DATE
         description: Date of service as a date type
         synonyms:
           - service date
       - name: submission_date_time
         expr: TRY_TO_DATE(SUBMISSION_DATE, 'YYYY-MM-DD')
+        data_type: DATE
         description: Submission date as a date type
 
   - name: PAYMENTS
@@ -123,16 +136,20 @@ tables:
     dimensions:
       - name: PAYMENT_ID
         expr: PAYMENT_ID
+        data_type: VARCHAR
         description: Unique payment identifier
         unique: true
       - name: CLAIM_ID
         expr: CLAIM_ID
+        data_type: VARCHAR
         description: Reference to the claim this payment is for
       - name: PAYER_ID
         expr: PAYER_ID
+        data_type: VARCHAR
         description: Reference to the payer who remitted this payment
       - name: PAYMENT_AMOUNT
         expr: PAYMENT_AMOUNT
+        data_type: NUMBER
         description: Amount paid by the payer in USD
         synonyms:
           - payment
@@ -140,17 +157,21 @@ tables:
           - collection
       - name: ALLOWED_AMOUNT
         expr: ALLOWED_AMOUNT
+        data_type: NUMBER
         description: Contracted allowed amount per payer agreement in USD
         synonyms:
           - contracted amount
       - name: PAYMENT_DATE
         expr: PAYMENT_DATE
+        data_type: VARCHAR
         description: Date payment was received (YYYY-MM-DD)
       - name: PAYMENT_METHOD
         expr: PAYMENT_METHOD
+        data_type: VARCHAR
         description: "Payment method: EFT, Check, Virtual Card"
       - name: IS_ACCURATE_PAYMENT
         expr: IS_ACCURATE_PAYMENT
+        data_type: NUMBER
         description: "Boolean (1/0): payment matches contracted reimbursement rate"
     measures:
       - name: total_payments
@@ -176,6 +197,7 @@ tables:
     time_dimensions:
       - name: payment_date_time
         expr: TRY_TO_DATE(PAYMENT_DATE, 'YYYY-MM-DD')
+        data_type: DATE
         description: Payment date as a date type
 
   - name: DENIALS
@@ -189,34 +211,43 @@ tables:
     dimensions:
       - name: DENIAL_ID
         expr: DENIAL_ID
+        data_type: VARCHAR
         description: Unique denial identifier
         unique: true
       - name: CLAIM_ID
         expr: CLAIM_ID
+        data_type: VARCHAR
         description: Reference to the denied claim
       - name: DENIAL_REASON_CODE
         expr: DENIAL_REASON_CODE
+        data_type: VARCHAR
         description: "Denial reason: AUTH, DUP, ELIG, COD, TMF, MED, INFO, MOD, COORD, BUNDLE"
         synonyms:
           - reason code
           - denial code
       - name: DENIAL_REASON_DESCRIPTION
         expr: DENIAL_REASON_DESCRIPTION
+        data_type: VARCHAR
         description: Human-readable denial reason
       - name: DENIAL_DATE
         expr: DENIAL_DATE
+        data_type: VARCHAR
         description: Date the denial was issued (YYYY-MM-DD)
       - name: DENIED_AMOUNT
         expr: DENIED_AMOUNT
+        data_type: NUMBER
         description: Dollar amount denied by the payer in USD
       - name: APPEAL_STATUS
         expr: APPEAL_STATUS
+        data_type: VARCHAR
         description: "Appeal outcome: Not Appealed, Won, Lost, or In Progress"
       - name: APPEAL_DATE
         expr: APPEAL_DATE
+        data_type: VARCHAR
         description: Date the appeal was filed (YYYY-MM-DD)
       - name: RECOVERED_AMOUNT
         expr: RECOVERED_AMOUNT
+        data_type: NUMBER
         description: Amount recovered through successful appeal in USD
     measures:
       - name: total_denials
@@ -238,6 +269,7 @@ tables:
     time_dimensions:
       - name: denial_date_time
         expr: TRY_TO_DATE(DENIAL_DATE, 'YYYY-MM-DD')
+        data_type: DATE
         description: Denial date as a date type
 
   - name: CHARGES
@@ -251,33 +283,42 @@ tables:
     dimensions:
       - name: CHARGE_ID
         expr: CHARGE_ID
+        data_type: VARCHAR
         description: Unique charge line identifier
         unique: true
       - name: ENCOUNTER_ID
         expr: ENCOUNTER_ID
+        data_type: VARCHAR
         description: Reference to the encounter
       - name: CPT_CODE
         expr: CPT_CODE
+        data_type: VARCHAR
         description: CPT procedure code
         synonyms:
           - procedure code
       - name: CPT_DESCRIPTION
         expr: CPT_DESCRIPTION
+        data_type: VARCHAR
         description: Description of the CPT code
       - name: UNITS
         expr: UNITS
+        data_type: NUMBER
         description: Number of units billed
       - name: CHARGE_AMOUNT
         expr: CHARGE_AMOUNT
+        data_type: NUMBER
         description: Charge amount per line item in USD
       - name: SERVICE_DATE
         expr: SERVICE_DATE
+        data_type: VARCHAR
         description: Date of service (YYYY-MM-DD)
       - name: POST_DATE
         expr: POST_DATE
+        data_type: VARCHAR
         description: Date charge was posted to the billing system (YYYY-MM-DD)
       - name: ICD10_CODE
         expr: ICD10_CODE
+        data_type: VARCHAR
         description: ICD-10 diagnosis code
         synonyms:
           - diagnosis code
@@ -294,6 +335,7 @@ tables:
     time_dimensions:
       - name: service_date_time
         expr: TRY_TO_DATE(SERVICE_DATE, 'YYYY-MM-DD')
+        data_type: DATE
         description: Service date as a date type
 
   - name: ADJUSTMENTS
@@ -307,24 +349,30 @@ tables:
     dimensions:
       - name: ADJUSTMENT_ID
         expr: ADJUSTMENT_ID
+        data_type: VARCHAR
         description: Unique adjustment identifier
         unique: true
       - name: CLAIM_ID
         expr: CLAIM_ID
+        data_type: VARCHAR
         description: Reference to the adjusted claim
       - name: ADJUSTMENT_TYPE_CODE
         expr: ADJUSTMENT_TYPE_CODE
+        data_type: VARCHAR
         description: "Type: CONTRACTUAL, WRITEOFF, ADMIN, PROMPT_PAY, CHARITY, SMALL_BAL"
         synonyms:
           - adjustment type
       - name: ADJUSTMENT_TYPE_DESCRIPTION
         expr: ADJUSTMENT_TYPE_DESCRIPTION
+        data_type: VARCHAR
         description: Human-readable adjustment type description
       - name: ADJUSTMENT_AMOUNT
         expr: ADJUSTMENT_AMOUNT
+        data_type: NUMBER
         description: Adjustment amount in USD
       - name: ADJUSTMENT_DATE
         expr: ADJUSTMENT_DATE
+        data_type: VARCHAR
         description: Date the adjustment was posted (YYYY-MM-DD)
     measures:
       - name: total_adjustments
@@ -342,6 +390,7 @@ tables:
     time_dimensions:
       - name: adjustment_date_time
         expr: TRY_TO_DATE(ADJUSTMENT_DATE, 'YYYY-MM-DD')
+        data_type: DATE
         description: Adjustment date as a date type
 
   - name: OPERATING_COSTS
@@ -355,24 +404,30 @@ tables:
     dimensions:
       - name: PERIOD
         expr: PERIOD
+        data_type: VARCHAR
         description: "Month in YYYY-MM format"
         unique: true
         synonyms:
           - month
       - name: BILLING_STAFF_COST
         expr: BILLING_STAFF_COST
+        data_type: NUMBER
         description: Monthly billing staff salary cost in USD
       - name: SOFTWARE_COST
         expr: SOFTWARE_COST
+        data_type: NUMBER
         description: Monthly EHR/billing software cost in USD
       - name: OUTSOURCING_COST
         expr: OUTSOURCING_COST
+        data_type: NUMBER
         description: Monthly third-party billing cost in USD
       - name: SUPPLIES_OVERHEAD
         expr: SUPPLIES_OVERHEAD
+        data_type: NUMBER
         description: Monthly supplies and overhead cost in USD
       - name: TOTAL_RCM_COST
         expr: TOTAL_RCM_COST
+        data_type: NUMBER
         description: Total monthly RCM department cost in USD
     measures:
       - name: total_rcm_cost
@@ -474,29 +529,36 @@ tables:
     dimensions:
       - name: ENCOUNTER_ID
         expr: ENCOUNTER_ID
+        data_type: VARCHAR
         description: Unique encounter identifier
         unique: true
         synonyms:
           - visit
       - name: PATIENT_ID
         expr: PATIENT_ID
+        data_type: VARCHAR
         description: Reference to the patient
       - name: PROVIDER_ID
         expr: PROVIDER_ID
+        data_type: VARCHAR
         description: Reference to the provider
       - name: DATE_OF_SERVICE
         expr: DATE_OF_SERVICE
+        data_type: VARCHAR
         description: Date of the encounter (YYYY-MM-DD)
       - name: DISCHARGE_DATE
         expr: DISCHARGE_DATE
+        data_type: VARCHAR
         description: Discharge date for inpatient stays (YYYY-MM-DD)
       - name: ENCOUNTER_TYPE
         expr: ENCOUNTER_TYPE
+        data_type: VARCHAR
         description: "Type: Outpatient, Inpatient, Emergency, Telehealth"
         synonyms:
           - visit type
       - name: DEPARTMENT
         expr: DEPARTMENT
+        data_type: VARCHAR
         description: Clinical department where encounter occurred
     measures:
       - name: total_encounters
@@ -507,6 +569,7 @@ tables:
     time_dimensions:
       - name: encounter_date
         expr: TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD')
+        data_type: DATE
         description: Encounter date as a date type
 
 # =========================================================================
