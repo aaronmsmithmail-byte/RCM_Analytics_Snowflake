@@ -6,7 +6,7 @@ description: >
 
 tables:
   # =========================================================================
-  # Fact Tables (use dimensions + measures + time_dimensions)
+  # Fact Tables (dimensions + time_dimensions + facts + metrics)
   # =========================================================================
 
   - name: CLAIMS
@@ -49,26 +49,12 @@ tables:
         expr: SUBMISSION_DATE
         data_type: VARCHAR
         description: Date the claim was submitted to the payer (YYYY-MM-DD)
-      - name: TOTAL_CHARGE_AMOUNT
-        expr: TOTAL_CHARGE_AMOUNT
-        data_type: NUMBER
-        description: Total billed amount for the claim in USD
-        synonyms:
-          - charge amount
-          - billed amount
-          - charges
       - name: CLAIM_STATUS
         expr: CLAIM_STATUS
         data_type: VARCHAR
         description: "Current status: Paid, Partially Paid, Denied, Pending, or Appealed"
         synonyms:
           - status
-      - name: IS_CLEAN_CLAIM
-        expr: IS_CLEAN_CLAIM
-        data_type: NUMBER
-        description: "Boolean (1/0): claim passed all payer edits on first submission"
-        synonyms:
-          - clean claim
       - name: SUBMISSION_METHOD
         expr: SUBMISSION_METHOD
         data_type: VARCHAR
@@ -77,49 +63,6 @@ tables:
         expr: FAIL_REASON
         data_type: VARCHAR
         description: "Reason code if not a clean claim: MISSING_AUTH, ELIGIBILITY_FAIL, CODING_ERROR, etc."
-    measures:
-      - name: total_claims
-        expr: COUNT(DISTINCT CLAIM_ID)
-        data_type: NUMBER
-        description: Total number of unique claims
-        synonyms:
-          - claim count
-          - number of claims
-      - name: total_charges
-        expr: SUM(TOTAL_CHARGE_AMOUNT)
-        data_type: NUMBER
-        description: Sum of all charge amounts in USD
-        synonyms:
-          - total billed
-          - gross charges
-      - name: denied_count
-        expr: "SUM(CASE WHEN CLAIM_STATUS IN ('Denied', 'Appealed') THEN 1 ELSE 0 END)"
-        data_type: NUMBER
-        description: Number of claims denied or appealed
-      - name: clean_count
-        expr: SUM(IS_CLEAN_CLAIM)
-        data_type: NUMBER
-        description: Number of claims that passed payer edits on first submission
-      - name: denial_rate
-        expr: "SUM(CASE WHEN CLAIM_STATUS IN ('Denied', 'Appealed') THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(CLAIM_ID), 0)"
-        data_type: NUMBER
-        description: "Percentage of claims denied — benchmark: ≤ 10%"
-        synonyms:
-          - deny rate
-          - pct denied
-      - name: clean_claim_rate
-        expr: SUM(IS_CLEAN_CLAIM) * 100.0 / NULLIF(COUNT(CLAIM_ID), 0)
-        data_type: NUMBER
-        description: "Percentage of clean claims — benchmark: ≥ 90%"
-        synonyms:
-          - first pass rate
-      - name: avg_charge_lag
-        expr: "AVG(DATEDIFF('day', TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD'), TRY_TO_DATE(SUBMISSION_DATE, 'YYYY-MM-DD')))"
-        data_type: NUMBER
-        description: Average days between service and claim submission
-        synonyms:
-          - submission lag
-          - charge lag days
     time_dimensions:
       - name: date_of_service_time
         expr: TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD')
@@ -131,6 +74,59 @@ tables:
         expr: TRY_TO_DATE(SUBMISSION_DATE, 'YYYY-MM-DD')
         data_type: DATE
         description: Submission date as a date type
+    facts:
+      - name: TOTAL_CHARGE_AMOUNT
+        expr: TOTAL_CHARGE_AMOUNT
+        data_type: NUMBER
+        description: Total billed amount for the claim in USD
+        default_aggregation: sum
+        synonyms:
+          - charge amount
+          - billed amount
+          - charges
+      - name: IS_CLEAN_CLAIM
+        expr: IS_CLEAN_CLAIM
+        data_type: NUMBER
+        description: "Boolean (1/0): claim passed all payer edits on first submission"
+        default_aggregation: sum
+        synonyms:
+          - clean claim
+    metrics:
+      - name: total_claims
+        expr: COUNT(DISTINCT CLAIM_ID)
+        description: Total number of unique claims
+        synonyms:
+          - claim count
+          - number of claims
+      - name: total_charges
+        expr: SUM(TOTAL_CHARGE_AMOUNT)
+        description: Sum of all charge amounts in USD
+        synonyms:
+          - total billed
+          - gross charges
+      - name: denied_count
+        expr: "SUM(CASE WHEN CLAIM_STATUS IN ('Denied', 'Appealed') THEN 1 ELSE 0 END)"
+        description: Number of claims denied or appealed
+      - name: clean_count
+        expr: SUM(IS_CLEAN_CLAIM)
+        description: Number of claims that passed payer edits on first submission
+      - name: denial_rate
+        expr: "SUM(CASE WHEN CLAIM_STATUS IN ('Denied', 'Appealed') THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(CLAIM_ID), 0)"
+        description: "Percentage of claims denied -- benchmark: <= 10%"
+        synonyms:
+          - deny rate
+          - pct denied
+      - name: clean_claim_rate
+        expr: SUM(IS_CLEAN_CLAIM) * 100.0 / NULLIF(COUNT(CLAIM_ID), 0)
+        description: "Percentage of clean claims -- benchmark: >= 90%"
+        synonyms:
+          - first pass rate
+      - name: avg_charge_lag
+        expr: "AVG(DATEDIFF('day', TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD'), TRY_TO_DATE(SUBMISSION_DATE, 'YYYY-MM-DD')))"
+        description: Average days between service and claim submission
+        synonyms:
+          - submission lag
+          - charge lag days
 
   - name: PAYMENTS
     base_table:
@@ -154,20 +150,6 @@ tables:
         expr: PAYER_ID
         data_type: VARCHAR
         description: Reference to the payer who remitted this payment
-      - name: PAYMENT_AMOUNT
-        expr: PAYMENT_AMOUNT
-        data_type: NUMBER
-        description: Amount paid by the payer in USD
-        synonyms:
-          - payment
-          - amount paid
-          - collection
-      - name: ALLOWED_AMOUNT
-        expr: ALLOWED_AMOUNT
-        data_type: NUMBER
-        description: Contracted allowed amount per payer agreement in USD
-        synonyms:
-          - contracted amount
       - name: PAYMENT_DATE
         expr: PAYMENT_DATE
         data_type: VARCHAR
@@ -176,41 +158,54 @@ tables:
         expr: PAYMENT_METHOD
         data_type: VARCHAR
         description: "Payment method: EFT, Check, Virtual Card"
+    time_dimensions:
+      - name: payment_date_time
+        expr: TRY_TO_DATE(PAYMENT_DATE, 'YYYY-MM-DD')
+        data_type: DATE
+        description: Payment date as a date type
+    facts:
+      - name: PAYMENT_AMOUNT
+        expr: PAYMENT_AMOUNT
+        data_type: NUMBER
+        description: Amount paid by the payer in USD
+        default_aggregation: sum
+        synonyms:
+          - payment
+          - amount paid
+          - collection
+      - name: ALLOWED_AMOUNT
+        expr: ALLOWED_AMOUNT
+        data_type: NUMBER
+        description: Contracted allowed amount per payer agreement in USD
+        default_aggregation: sum
+        synonyms:
+          - contracted amount
       - name: IS_ACCURATE_PAYMENT
         expr: IS_ACCURATE_PAYMENT
         data_type: NUMBER
         description: "Boolean (1/0): payment matches contracted reimbursement rate"
-    measures:
+        default_aggregation: sum
+    metrics:
       - name: total_payments
         expr: SUM(PAYMENT_AMOUNT)
-        data_type: NUMBER
         description: Total payments collected in USD
         synonyms:
           - total collections
           - revenue collected
       - name: total_allowed
         expr: SUM(ALLOWED_AMOUNT)
-        data_type: NUMBER
         description: Total contracted allowed amounts in USD
       - name: payment_accuracy_rate
         expr: SUM(IS_ACCURATE_PAYMENT) * 100.0 / NULLIF(COUNT(*), 0)
-        data_type: NUMBER
-        description: "Percentage of accurate payments — benchmark: ≥ 95%"
+        description: "Percentage of accurate payments -- benchmark: >= 95%"
       - name: total_underpaid
         expr: "SUM(CASE WHEN PAYMENT_AMOUNT < ALLOWED_AMOUNT THEN ALLOWED_AMOUNT - PAYMENT_AMOUNT ELSE 0 END)"
-        data_type: NUMBER
         description: Total underpayment gap in USD
         synonyms:
           - underpayment amount
       - name: underpayment_rate
         expr: "SUM(CASE WHEN PAYMENT_AMOUNT < ALLOWED_AMOUNT THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0)"
-        data_type: NUMBER
-        description: "Percentage of underpaid claims — benchmark: ≤ 5%"
-    time_dimensions:
-      - name: payment_date_time
-        expr: TRY_TO_DATE(PAYMENT_DATE, 'YYYY-MM-DD')
-        data_type: DATE
-        description: Payment date as a date type
+        description: "Percentage of underpaid claims -- benchmark: <= 5%"
 
   - name: DENIALS
     base_table:
@@ -245,10 +240,6 @@ tables:
         expr: DENIAL_DATE
         data_type: VARCHAR
         description: Date the denial was issued (YYYY-MM-DD)
-      - name: DENIED_AMOUNT
-        expr: DENIED_AMOUNT
-        data_type: NUMBER
-        description: Dollar amount denied by the payer in USD
       - name: APPEAL_STATUS
         expr: APPEAL_STATUS
         data_type: VARCHAR
@@ -257,36 +248,39 @@ tables:
         expr: APPEAL_DATE
         data_type: VARCHAR
         description: Date the appeal was filed (YYYY-MM-DD)
-      - name: RECOVERED_AMOUNT
-        expr: RECOVERED_AMOUNT
-        data_type: NUMBER
-        description: Amount recovered through successful appeal in USD
-    measures:
-      - name: total_denials
-        expr: COUNT(*)
-        data_type: NUMBER
-        description: Total number of denials
-        synonyms:
-          - denial count
-      - name: total_denied
-        expr: SUM(DENIED_AMOUNT)
-        data_type: NUMBER
-        description: Total dollars denied in USD
-      - name: total_recovered
-        expr: SUM(RECOVERED_AMOUNT)
-        data_type: NUMBER
-        description: Total dollars recovered through appeals in USD
-      - name: appeal_success_rate
-        expr: "SUM(CASE WHEN APPEAL_STATUS = 'Won' THEN 1 ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN APPEAL_STATUS != 'Not Appealed' THEN 1 ELSE 0 END), 0)"
-        data_type: NUMBER
-        description: Percentage of appealed denials successfully overturned
-        synonyms:
-          - appeal win rate
     time_dimensions:
       - name: denial_date_time
         expr: TRY_TO_DATE(DENIAL_DATE, 'YYYY-MM-DD')
         data_type: DATE
         description: Denial date as a date type
+    facts:
+      - name: DENIED_AMOUNT
+        expr: DENIED_AMOUNT
+        data_type: NUMBER
+        description: Dollar amount denied by the payer in USD
+        default_aggregation: sum
+      - name: RECOVERED_AMOUNT
+        expr: RECOVERED_AMOUNT
+        data_type: NUMBER
+        description: Amount recovered through successful appeal in USD
+        default_aggregation: sum
+    metrics:
+      - name: total_denials
+        expr: COUNT(*)
+        description: Total number of denials
+        synonyms:
+          - denial count
+      - name: total_denied
+        expr: SUM(DENIED_AMOUNT)
+        description: Total dollars denied in USD
+      - name: total_recovered
+        expr: SUM(RECOVERED_AMOUNT)
+        description: Total dollars recovered through appeals in USD
+      - name: appeal_success_rate
+        expr: "SUM(CASE WHEN APPEAL_STATUS = 'Won' THEN 1 ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN APPEAL_STATUS != 'Not Appealed' THEN 1 ELSE 0 END), 0)"
+        description: Percentage of appealed denials successfully overturned
+        synonyms:
+          - appeal win rate
 
   - name: CHARGES
     base_table:
@@ -316,14 +310,6 @@ tables:
         expr: CPT_DESCRIPTION
         data_type: VARCHAR
         description: Description of the CPT code
-      - name: UNITS
-        expr: UNITS
-        data_type: NUMBER
-        description: Number of units billed
-      - name: CHARGE_AMOUNT
-        expr: CHARGE_AMOUNT
-        data_type: NUMBER
-        description: Charge amount per line item in USD
       - name: SERVICE_DATE
         expr: SERVICE_DATE
         data_type: VARCHAR
@@ -338,24 +324,32 @@ tables:
         description: ICD-10 diagnosis code
         synonyms:
           - diagnosis code
-    measures:
-      - name: total_charge_amount
-        expr: SUM(CHARGE_AMOUNT)
-        data_type: NUMBER
-        description: Sum of all line-item charges in USD
-      - name: total_units
-        expr: SUM(UNITS)
-        data_type: NUMBER
-        description: Total units billed
-      - name: charge_line_count
-        expr: COUNT(*)
-        data_type: NUMBER
-        description: Number of charge lines
     time_dimensions:
       - name: service_date_time
         expr: TRY_TO_DATE(SERVICE_DATE, 'YYYY-MM-DD')
         data_type: DATE
         description: Service date as a date type
+    facts:
+      - name: UNITS
+        expr: UNITS
+        data_type: NUMBER
+        description: Number of units billed
+        default_aggregation: sum
+      - name: CHARGE_AMOUNT
+        expr: CHARGE_AMOUNT
+        data_type: NUMBER
+        description: Charge amount per line item in USD
+        default_aggregation: sum
+    metrics:
+      - name: total_charge_amount
+        expr: SUM(CHARGE_AMOUNT)
+        description: Sum of all line-item charges in USD
+      - name: total_units
+        expr: SUM(UNITS)
+        description: Total units billed
+      - name: charge_line_count
+        expr: COUNT(*)
+        description: Number of charge lines
 
   - name: ADJUSTMENTS
     base_table:
@@ -385,35 +379,34 @@ tables:
         expr: ADJUSTMENT_TYPE_DESCRIPTION
         data_type: VARCHAR
         description: Human-readable adjustment type description
-      - name: ADJUSTMENT_AMOUNT
-        expr: ADJUSTMENT_AMOUNT
-        data_type: NUMBER
-        description: Adjustment amount in USD
       - name: ADJUSTMENT_DATE
         expr: ADJUSTMENT_DATE
         data_type: VARCHAR
         description: Date the adjustment was posted (YYYY-MM-DD)
-    measures:
+    time_dimensions:
+      - name: adjustment_date_time
+        expr: TRY_TO_DATE(ADJUSTMENT_DATE, 'YYYY-MM-DD')
+        data_type: DATE
+        description: Adjustment date as a date type
+    facts:
+      - name: ADJUSTMENT_AMOUNT
+        expr: ADJUSTMENT_AMOUNT
+        data_type: NUMBER
+        description: Adjustment amount in USD
+        default_aggregation: sum
+    metrics:
       - name: total_adjustments
         expr: SUM(ADJUSTMENT_AMOUNT)
-        data_type: NUMBER
         description: Sum of all adjustments in USD
       - name: bad_debt_total
         expr: "SUM(CASE WHEN ADJUSTMENT_TYPE_CODE = 'WRITEOFF' THEN ADJUSTMENT_AMOUNT ELSE 0 END)"
-        data_type: NUMBER
         description: Total bad debt write-offs in USD
         synonyms:
           - write-offs
           - bad debt
       - name: contractual_total
         expr: "SUM(CASE WHEN ADJUSTMENT_TYPE_CODE = 'CONTRACTUAL' THEN ADJUSTMENT_AMOUNT ELSE 0 END)"
-        data_type: NUMBER
         description: Total contractual adjustments in USD
-    time_dimensions:
-      - name: adjustment_date_time
-        expr: TRY_TO_DATE(ADJUSTMENT_DATE, 'YYYY-MM-DD')
-        data_type: DATE
-        description: Adjustment date as a date type
 
   - name: OPERATING_COSTS
     base_table:
@@ -422,7 +415,7 @@ tables:
       table: OPERATING_COSTS
     description: >
       Monthly RCM department operating costs. Drives cost-to-collect calculation
-      (total RCM cost / total collections). Benchmark: ≤ 3%.
+      (total RCM cost / total collections). Benchmark: <= 3%.
     dimensions:
       - name: PERIOD
         expr: PERIOD
@@ -431,115 +424,39 @@ tables:
         unique: true
         synonyms:
           - month
+    facts:
       - name: BILLING_STAFF_COST
         expr: BILLING_STAFF_COST
         data_type: NUMBER
         description: Monthly billing staff salary cost in USD
+        default_aggregation: sum
       - name: SOFTWARE_COST
         expr: SOFTWARE_COST
         data_type: NUMBER
         description: Monthly EHR/billing software cost in USD
+        default_aggregation: sum
       - name: OUTSOURCING_COST
         expr: OUTSOURCING_COST
         data_type: NUMBER
         description: Monthly third-party billing cost in USD
+        default_aggregation: sum
       - name: SUPPLIES_OVERHEAD
         expr: SUPPLIES_OVERHEAD
         data_type: NUMBER
         description: Monthly supplies and overhead cost in USD
+        default_aggregation: sum
       - name: TOTAL_RCM_COST
         expr: TOTAL_RCM_COST
         data_type: NUMBER
         description: Total monthly RCM department cost in USD
-    measures:
+        default_aggregation: sum
+    metrics:
       - name: total_rcm_cost
         expr: SUM(TOTAL_RCM_COST)
-        data_type: NUMBER
         description: Sum of all RCM operating costs in USD
         synonyms:
           - operating cost
           - billing cost
-
-  # =========================================================================
-  # Dimension Tables (use columns only — no measures/time_dimensions)
-  # =========================================================================
-
-  - name: PAYERS
-    base_table:
-      database: RCM_ANALYTICS
-      schema: SILVER
-      table: PAYERS
-    description: >
-      Insurance payer master list. Reference dimension for payer analysis,
-      payer mix reporting, and denial rate by payer.
-    columns:
-      - name: PAYER_ID
-        description: Unique payer identifier
-        unique: true
-      - name: PAYER_NAME
-        description: Insurance company name
-        synonyms:
-          - payer
-          - insurance
-          - insurer
-      - name: PAYER_TYPE
-        description: "Category: Commercial, Government, or Self-Pay"
-        synonyms:
-          - insurance type
-      - name: AVG_REIMBURSEMENT_PCT
-        description: Average contracted reimbursement percentage
-      - name: CONTRACT_ID
-        description: Payer contract identifier
-
-  - name: PATIENTS
-    base_table:
-      database: RCM_ANALYTICS
-      schema: SILVER
-      table: PATIENTS
-    description: >
-      Patient demographics. Reference dimension for patient-level analysis.
-    columns:
-      - name: PATIENT_ID
-        description: Unique patient identifier
-        unique: true
-      - name: FIRST_NAME
-        description: Patient first name (PII)
-      - name: LAST_NAME
-        description: Patient last name (PII)
-      - name: DATE_OF_BIRTH
-        description: Patient date of birth (PII)
-      - name: GENDER
-        description: Patient gender (M/F)
-      - name: PRIMARY_PAYER_ID
-        description: Reference to the patient primary insurance payer
-      - name: MEMBER_ID
-        description: Insurance member ID (PII)
-      - name: ZIP_CODE
-        description: Patient zip code (PII)
-
-  - name: PROVIDERS
-    base_table:
-      database: RCM_ANALYTICS
-      schema: SILVER
-      table: PROVIDERS
-    description: >
-      Clinician roster. Reference dimension for provider performance
-      scorecards and department-level analysis.
-    columns:
-      - name: PROVIDER_ID
-        description: Unique provider identifier
-        unique: true
-      - name: PROVIDER_NAME
-        description: Provider name (Dr. First Last)
-        synonyms:
-          - doctor
-          - physician
-      - name: NPI
-        description: National Provider Identifier (10-digit)
-      - name: DEPARTMENT
-        description: Clinical department
-      - name: SPECIALTY
-        description: Medical specialty
 
   - name: ENCOUNTERS
     base_table:
@@ -583,18 +500,134 @@ tables:
         expr: DEPARTMENT
         data_type: VARCHAR
         description: Clinical department where encounter occurred
-    measures:
-      - name: total_encounters
-        expr: COUNT(DISTINCT ENCOUNTER_ID)
-        data_type: NUMBER
-        description: Total number of unique encounters
-        synonyms:
-          - visit count
     time_dimensions:
       - name: encounter_date
         expr: TRY_TO_DATE(DATE_OF_SERVICE, 'YYYY-MM-DD')
         data_type: DATE
         description: Encounter date as a date type
+    metrics:
+      - name: total_encounters
+        expr: COUNT(DISTINCT ENCOUNTER_ID)
+        description: Total number of unique encounters
+        synonyms:
+          - visit count
+
+  # =========================================================================
+  # Dimension Tables (columns with expr + data_type)
+  # =========================================================================
+
+  - name: PAYERS
+    base_table:
+      database: RCM_ANALYTICS
+      schema: SILVER
+      table: PAYERS
+    description: >
+      Insurance payer master list. Reference dimension for payer analysis,
+      payer mix reporting, and denial rate by payer.
+    columns:
+      - name: PAYER_ID
+        expr: PAYER_ID
+        data_type: VARCHAR
+        description: Unique payer identifier
+        unique: true
+      - name: PAYER_NAME
+        expr: PAYER_NAME
+        data_type: VARCHAR
+        description: Insurance company name
+        synonyms:
+          - payer
+          - insurance
+          - insurer
+      - name: PAYER_TYPE
+        expr: PAYER_TYPE
+        data_type: VARCHAR
+        description: "Category: Commercial, Government, or Self-Pay"
+        synonyms:
+          - insurance type
+      - name: AVG_REIMBURSEMENT_PCT
+        expr: AVG_REIMBURSEMENT_PCT
+        data_type: NUMBER
+        description: Average contracted reimbursement percentage
+      - name: CONTRACT_ID
+        expr: CONTRACT_ID
+        data_type: VARCHAR
+        description: Payer contract identifier
+
+  - name: PATIENTS
+    base_table:
+      database: RCM_ANALYTICS
+      schema: SILVER
+      table: PATIENTS
+    description: >
+      Patient demographics. Reference dimension for patient-level analysis.
+    columns:
+      - name: PATIENT_ID
+        expr: PATIENT_ID
+        data_type: VARCHAR
+        description: Unique patient identifier
+        unique: true
+      - name: FIRST_NAME
+        expr: FIRST_NAME
+        data_type: VARCHAR
+        description: Patient first name (PII)
+      - name: LAST_NAME
+        expr: LAST_NAME
+        data_type: VARCHAR
+        description: Patient last name (PII)
+      - name: DATE_OF_BIRTH
+        expr: DATE_OF_BIRTH
+        data_type: VARCHAR
+        description: Patient date of birth (PII)
+      - name: GENDER
+        expr: GENDER
+        data_type: VARCHAR
+        description: Patient gender (M/F)
+      - name: PRIMARY_PAYER_ID
+        expr: PRIMARY_PAYER_ID
+        data_type: VARCHAR
+        description: Reference to the patient primary insurance payer
+      - name: MEMBER_ID
+        expr: MEMBER_ID
+        data_type: VARCHAR
+        description: Insurance member ID (PII)
+      - name: ZIP_CODE
+        expr: ZIP_CODE
+        data_type: VARCHAR
+        description: Patient zip code (PII)
+
+  - name: PROVIDERS
+    base_table:
+      database: RCM_ANALYTICS
+      schema: SILVER
+      table: PROVIDERS
+    description: >
+      Clinician roster. Reference dimension for provider performance
+      scorecards and department-level analysis.
+    columns:
+      - name: PROVIDER_ID
+        expr: PROVIDER_ID
+        data_type: VARCHAR
+        description: Unique provider identifier
+        unique: true
+      - name: PROVIDER_NAME
+        expr: PROVIDER_NAME
+        data_type: VARCHAR
+        description: Provider name (Dr. First Last)
+        synonyms:
+          - doctor
+          - physician
+      - name: NPI
+        expr: NPI
+        data_type: VARCHAR
+        description: National Provider Identifier (10-digit)
+      - name: DEPARTMENT
+        expr: DEPARTMENT
+        data_type: VARCHAR
+        description: Clinical department
+      - name: SPECIALTY
+        expr: SPECIALTY
+        data_type: VARCHAR
+        description: Medical specialty
 
 # =========================================================================
 # Relationships (joins between tables)
@@ -603,6 +636,7 @@ relationships:
   - name: claims_to_encounters
     left_table: CLAIMS
     right_table: ENCOUNTERS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: ENCOUNTER_ID
@@ -610,6 +644,7 @@ relationships:
   - name: claims_to_payers
     left_table: CLAIMS
     right_table: PAYERS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: PAYER_ID
@@ -617,6 +652,7 @@ relationships:
   - name: claims_to_patients
     left_table: CLAIMS
     right_table: PATIENTS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: PATIENT_ID
@@ -624,6 +660,7 @@ relationships:
   - name: payments_to_claims
     left_table: PAYMENTS
     right_table: CLAIMS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: CLAIM_ID
@@ -631,6 +668,7 @@ relationships:
   - name: payments_to_payers
     left_table: PAYMENTS
     right_table: PAYERS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: PAYER_ID
@@ -638,6 +676,7 @@ relationships:
   - name: denials_to_claims
     left_table: DENIALS
     right_table: CLAIMS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: CLAIM_ID
@@ -645,6 +684,7 @@ relationships:
   - name: adjustments_to_claims
     left_table: ADJUSTMENTS
     right_table: CLAIMS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: CLAIM_ID
@@ -652,6 +692,7 @@ relationships:
   - name: charges_to_encounters
     left_table: CHARGES
     right_table: ENCOUNTERS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: ENCOUNTER_ID
@@ -659,6 +700,7 @@ relationships:
   - name: encounters_to_patients
     left_table: ENCOUNTERS
     right_table: PATIENTS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: PATIENT_ID
@@ -666,6 +708,7 @@ relationships:
   - name: encounters_to_providers
     left_table: ENCOUNTERS
     right_table: PROVIDERS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: PROVIDER_ID
@@ -673,6 +716,7 @@ relationships:
   - name: patients_to_payers
     left_table: PATIENTS
     right_table: PAYERS
+    join_type: left_outer
     relationship_type: many_to_one
     relationship_columns:
       - left_column: PRIMARY_PAYER_ID
