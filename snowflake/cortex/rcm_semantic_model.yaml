@@ -17,6 +17,9 @@ tables:
     description: >
       Insurance claims submitted to payers for reimbursement. Central fact table
       for most RCM KPIs including denial rate, clean claim rate, and A/R metrics.
+    primary_key:
+      columns:
+        - CLAIM_ID
     dimensions:
       - name: CLAIM_ID
         expr: CLAIM_ID
@@ -466,6 +469,9 @@ tables:
     description: >
       Patient visits/encounters. Links patients and providers to downstream
       charges and claims.
+    primary_key:
+      columns:
+        - ENCOUNTER_ID
     dimensions:
       - name: ENCOUNTER_ID
         expr: ENCOUNTER_ID
@@ -524,6 +530,9 @@ tables:
     description: >
       Insurance payer master list. Reference dimension for payer analysis,
       payer mix reporting, and denial rate by payer.
+    primary_key:
+      columns:
+        - PAYER_ID
     dimensions:
       - name: PAYER_ID
         expr: PAYER_ID
@@ -560,6 +569,9 @@ tables:
       table: PATIENTS
     description: >
       Patient demographics. Reference dimension for patient-level analysis.
+    primary_key:
+      columns:
+        - PATIENT_ID
     dimensions:
       - name: PATIENT_ID
         expr: PATIENT_ID
@@ -603,6 +615,9 @@ tables:
     description: >
       Clinician roster. Reference dimension for provider performance
       scorecards and department-level analysis.
+    primary_key:
+      columns:
+        - PROVIDER_ID
     dimensions:
       - name: PROVIDER_ID
         expr: PROVIDER_ID
