@@ -66,9 +66,10 @@ def send_analyst_message(session, user_question, message_history=None):
     messages = []
     if message_history:
         for msg in message_history:
+            role = msg["role"] if msg["role"] == "user" else "analyst"
             messages.append(
                 {
-                    "role": msg["role"],
+                    "role": role,
                     "content": [{"type": "text", "text": msg["content"]}],
                 }
             )
@@ -81,34 +82,33 @@ def send_analyst_message(session, user_question, message_history=None):
         }
     )
 
-    # Call Cortex Analyst via the REST API (available within SiS)
+    # Call Cortex Analyst via the _snowflake REST API (primary path in SiS)
     try:
-        request_body = {
-            "messages": messages,
-            "semantic_model_file": SEMANTIC_MODEL_STAGE,
-        }
-
-        json_str = json.dumps(request_body).replace("\\", "\\\\").replace("'", "''")
-        resp = session.sql(
-            f"""
-            SELECT SNOWFLAKE.CORTEX.ANALYST(
-                PARSE_JSON('{json_str}')
-            ) AS RESPONSE
-            """
-        ).collect()
-
-        if not resp:
-            return {"type": "error", "content": "No response from Cortex Analyst"}
-
-        response_json = json.loads(resp[0]["RESPONSE"])
-        return _parse_analyst_response(session, response_json)
-
-    except Exception as e:
-        # Fallback: try the _snowflake module approach (available in SiS)
+        return _call_analyst_via_rest(session, messages)
+    except Exception as rest_err:
+        # Fallback: try the SQL function approach
         try:
-            return _call_analyst_via_rest(session, messages)
+            request_body = {
+                "messages": messages,
+                "semantic_model_file": SEMANTIC_MODEL_STAGE,
+            }
+            json_str = json.dumps(request_body).replace("\\", "\\\\").replace("'", "''")
+            resp = session.sql(
+                f"""
+                SELECT SNOWFLAKE.CORTEX.COMPLETE(
+                    'analyst',
+                    PARSE_JSON('{json_str}')
+                ) AS RESPONSE
+                """
+            ).collect()
+
+            if not resp:
+                return {"type": "error", "content": "No response from Cortex Analyst"}
+
+            response_json = json.loads(resp[0]["RESPONSE"])
+            return _parse_analyst_response(session, response_json)
         except Exception:
-            return {"type": "error", "content": f"Cortex Analyst error: {str(e)}"}
+            return {"type": "error", "content": f"Cortex Analyst error: {str(rest_err)}"}
 
 
 def _call_analyst_via_rest(session, messages):
@@ -139,9 +139,19 @@ def _call_analyst_via_rest(session, messages):
         response_json = json.loads(resp["content"])
         return _parse_analyst_response(session, response_json)
     else:
+        # Surface the actual error body so users can diagnose the issue
+        error_detail = ""
+        try:
+            error_body = json.loads(resp.get("content", "{}"))
+            error_detail = error_body.get("message", json.dumps(error_body))
+        except Exception:
+            error_detail = str(resp.get("content", ""))[:500]
         return {
             "type": "error",
-            "content": f"Cortex Analyst returned status {resp['status']}",
+            "content": (
+                f"Cortex Analyst returned status {resp['status']}. "
+                f"{error_detail}"
+            ),
         }
 
 
