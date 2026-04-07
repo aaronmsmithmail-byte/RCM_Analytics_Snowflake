@@ -102,7 +102,8 @@ def _set_period_index(df):
 
 def query_days_in_ar(p: FilterParams):
     cte = _cte(p)
-    sql = (
+    # Query 1: monthly charges and payments (for trend charts)
+    sql_monthly = (
         cte
         + """
 , monthly_charges AS (
@@ -123,14 +124,48 @@ LEFT JOIN monthly_payments mp ON c.period = mp.period
 ORDER BY c.period
 """
     )
-    df = _query(sql)
+    df = _query(sql_monthly)
     if df.empty:
         return 0.0, _empty_trend("charges", "payments", "ar_balance", "days_in_ar")
-    df["ar_balance"] = df["charges"].cumsum() - df["payments"].cumsum()
-    df["avg_daily_charges"] = df["charges"] / 30
-    df["days_in_ar"] = np.where(df["avg_daily_charges"] > 0, df["ar_balance"] / df["avg_daily_charges"], 0)
+
+    # Query 2: actual outstanding AR per claim (charges minus payments received)
+    sql_ar = (
+        cte
+        + """
+SELECT fc.claim_id,
+       TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
+       fc.total_charge_amount::FLOAT AS charge,
+       COALESCE(SUM(p.payment_amount), 0)::FLOAT AS paid
+FROM filtered_claims fc
+LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
+GROUP BY fc.claim_id, fc.date_of_service, fc.total_charge_amount
+HAVING fc.total_charge_amount - COALESCE(SUM(p.payment_amount), 0) > 0
+"""
+    )
+    ar_df = _query(sql_ar)
+
+    # Compute the actual total outstanding AR (sum of unpaid balances)
+    if ar_df.empty:
+        total_ar = 0.0
+    else:
+        ar_df["outstanding"] = ar_df["charge"] - ar_df["paid"]
+        total_ar = float(ar_df["outstanding"].sum())
+
+    # Use trailing 90-day avg daily charges for the overall DAR
+    recent_charges = df["charges"].tail(3).sum()
+    avg_daily_charges = recent_charges / 90 if recent_charges > 0 else 0
+    overall_dar = total_ar / avg_daily_charges if avg_daily_charges > 0 else 0.0
+
+    # Build the trend: compute a rolling AR balance for each month
+    # using per-month net AR (charges - payments) with a trailing window
+    ROLLING_WINDOW = 3
+    df["monthly_ar"] = df["charges"] - df["payments"]
+    df["ar_balance"] = df["monthly_ar"].rolling(ROLLING_WINDOW, min_periods=1).sum().clip(lower=0)
+    rolling_charges = df["charges"].rolling(ROLLING_WINDOW, min_periods=1).sum()
+    avg_daily = rolling_charges / (ROLLING_WINDOW * 30)
+    df["days_in_ar"] = np.where(avg_daily > 0, df["ar_balance"] / avg_daily, 0)
+    df = df.drop(columns=["monthly_ar"])
     df = _set_period_index(df)
-    overall_dar = df["days_in_ar"].iloc[-1] if len(df) > 0 else 0.0
     return round(float(overall_dar), 1), df[["charges", "payments", "ar_balance", "days_in_ar"]]
 
 
@@ -150,18 +185,18 @@ def query_net_collection_rate(p: FilterParams):
     FROM filtered_claims
     GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
-    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(p.payment_amount), 0)::FLOAT AS payments
     FROM filtered_claims fc
-    LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
+    JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
+    GROUP BY TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_contractual AS (
-    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(a.adjustment_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(CASE WHEN a.adjustment_type_code = 'CONTRACTUAL'
                              THEN a.adjustment_amount ELSE 0 END), 0)::FLOAT AS contractual_adj
     FROM filtered_claims fc
-    LEFT JOIN RCM_ANALYTICS.SILVER.ADJUSTMENTS a ON fc.claim_id = a.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
+    JOIN RCM_ANALYTICS.SILVER.ADJUSTMENTS a ON fc.claim_id = a.claim_id
+    GROUP BY TO_CHAR(TRY_TO_DATE(a.adjustment_date, 'YYYY-MM-DD'), 'YYYY-MM')
 )
 SELECT c.period, c.charges, COALESCE(mp.payments, 0)::FLOAT AS payments,
        COALESCE(mc.contractual_adj, 0)::FLOAT AS contractual_adj
@@ -202,11 +237,11 @@ def query_gross_collection_rate(p: FilterParams):
     FROM filtered_claims
     GROUP BY TO_CHAR(TRY_TO_DATE(date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
 ), monthly_payments AS (
-    SELECT TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
+    SELECT TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM') AS period,
            COALESCE(SUM(p.payment_amount), 0)::FLOAT AS payments
     FROM filtered_claims fc
-    LEFT JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
-    GROUP BY TO_CHAR(TRY_TO_DATE(fc.date_of_service, 'YYYY-MM-DD'), 'YYYY-MM')
+    JOIN RCM_ANALYTICS.SILVER.PAYMENTS p ON fc.claim_id = p.claim_id
+    GROUP BY TO_CHAR(TRY_TO_DATE(p.payment_date, 'YYYY-MM-DD'), 'YYYY-MM')
 )
 SELECT c.period, c.charges, COALESCE(mp.payments, 0)::FLOAT AS payments
 FROM monthly_charges c

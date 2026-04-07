@@ -794,28 +794,6 @@ accuracy_val = query_payment_accuracy(params)
 bad_debt_val, bad_debt_amt, total_charges_kpi = query_bad_debt_rate(params)
 ctc_val, ctc_trend = query_cost_to_collect(params)
 
-# ── Debug Panel (temporary) ─────────────────────────────────────────
-# Displays raw KPI values and DataFrame dtypes to diagnose chart issues.
-# Remove this block once charts are confirmed working.
-with st.sidebar.expander("Debug: KPI Diagnostics", expanded=False):
-    st.caption(f"GCR: {gcr_val}%  |  NCR: {ncr_val}%")
-    st.caption(f"DAR: {dar_val}  |  Denial: {denial_val}%")
-    if not gcr_trend.empty:
-        st.caption("gcr_trend dtypes:")
-        st.text(str(gcr_trend.dtypes.to_dict()))
-        st.caption("gcr_trend (first 3 rows):")
-        st.dataframe(gcr_trend.head(3))
-    if not ncr_trend.empty:
-        st.caption("ncr_trend dtypes:")
-        st.text(str(ncr_trend.dtypes.to_dict()))
-        st.caption("ncr_trend (first 3 rows):")
-        st.dataframe(ncr_trend.head(3))
-    if not dar_trend.empty:
-        st.caption("dar_trend dtypes:")
-        st.text(str(dar_trend.dtypes.to_dict()))
-        st.caption("dar_trend (first 3 rows):")
-        st.dataframe(dar_trend.head(3))
-
 # ── Alert Threshold Configuration ────────────────────────────────────
 # Defaults match industry benchmarks.  Users can adjust via the sidebar
 # expander and thresholds persist for the browser session.
@@ -1541,15 +1519,16 @@ with tab4:
         aging_df["Bucket"] = aging_df["Bucket"].tolist()
         aging_df["Total A/R"] = [float(v) for v in aging_df["Total A/R"]]
         aging_df["% of Total"] = [float(v) for v in aging_df["% of Total"]]
+        aging_df["Label"] = [f"{v:.1f}%" for v in aging_df["% of Total"]]
         fig = px.bar(
             aging_df,
             x="Bucket",
             y="Total A/R",
-            text="% of Total",
+            text="Label",
             color="Bucket",
             color_discrete_sequence=["#10B981", "#F59E0B", "#F97316", "#EF4444", "#991B1B"],
         )
-        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", marker_line_width=0, opacity=0.92)
+        fig.update_traces(textposition="outside", marker_line_width=0, opacity=0.92)
         fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False, plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
@@ -3071,6 +3050,7 @@ with tab11:
                 .reset_index()
             )
             ptype["pr_rate"] = (ptype["total_patient_resp"] / ptype["total_allowed"] * 100).round(1)
+            ptype["pr_label"] = ptype["pr_rate"].apply(lambda v: f"{v:.1f}%")
             fig = px.bar(
                 ptype.sort_values("total_patient_resp", ascending=False),
                 x="payer_type",
@@ -3083,9 +3063,9 @@ with tab11:
                     "pr_rate": "PR Rate (%)",
                 },
                 title="Patient Responsibility by Payer Type",
-                text="pr_rate",
+                text="pr_label",
             )
-            fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+            fig.update_traces(textposition="outside")
             fig.update_layout(height=400, margin=dict(t=40, b=10))
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
