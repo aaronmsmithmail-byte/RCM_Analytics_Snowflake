@@ -513,7 +513,7 @@ tables:
           - visit count
 
   # =========================================================================
-  # Dimension Tables (columns with expr + data_type)
+  # Dimension Tables (dimensions with expr + data_type)
   # =========================================================================
 
   - name: PAYERS
@@ -524,7 +524,7 @@ tables:
     description: >
       Insurance payer master list. Reference dimension for payer analysis,
       payer mix reporting, and denial rate by payer.
-    columns:
+    dimensions:
       - name: PAYER_ID
         expr: PAYER_ID
         data_type: VARCHAR
@@ -560,7 +560,7 @@ tables:
       table: PATIENTS
     description: >
       Patient demographics. Reference dimension for patient-level analysis.
-    columns:
+    dimensions:
       - name: PATIENT_ID
         expr: PATIENT_ID
         data_type: VARCHAR
@@ -603,7 +603,7 @@ tables:
     description: >
       Clinician roster. Reference dimension for provider performance
       scorecards and department-level analysis.
-    columns:
+    dimensions:
       - name: PROVIDER_ID
         expr: PROVIDER_ID
         data_type: VARCHAR
