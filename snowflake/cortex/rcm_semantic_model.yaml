@@ -6,7 +6,7 @@ description: >
 
 tables:
   # =========================================================================
-  # Fact Tables
+  # Fact Tables (use dimensions + measures + time_dimensions)
   # =========================================================================
 
   - name: CLAIMS
@@ -17,43 +17,54 @@ tables:
     description: >
       Insurance claims submitted to payers for reimbursement. Central fact table
       for most RCM KPIs including denial rate, clean claim rate, and A/R metrics.
-    columns:
+    dimensions:
       - name: CLAIM_ID
+        expr: CLAIM_ID
         description: Unique claim identifier
+        unique: true
         synonyms:
           - claim number
           - claim
-        unique: true
       - name: ENCOUNTER_ID
+        expr: ENCOUNTER_ID
         description: Reference to the patient encounter that generated this claim
       - name: PATIENT_ID
+        expr: PATIENT_ID
         description: Reference to the patient who received services
       - name: PAYER_ID
+        expr: PAYER_ID
         description: Reference to the insurance payer billed
       - name: DATE_OF_SERVICE
+        expr: DATE_OF_SERVICE
         description: Date the healthcare service was rendered (YYYY-MM-DD)
         synonyms:
           - service date
           - DOS
       - name: SUBMISSION_DATE
+        expr: SUBMISSION_DATE
         description: Date the claim was submitted to the payer (YYYY-MM-DD)
       - name: TOTAL_CHARGE_AMOUNT
+        expr: TOTAL_CHARGE_AMOUNT
         description: Total billed amount for the claim in USD
         synonyms:
           - charge amount
           - billed amount
           - charges
       - name: CLAIM_STATUS
+        expr: CLAIM_STATUS
         description: "Current status: Paid, Partially Paid, Denied, Pending, or Appealed"
         synonyms:
           - status
       - name: IS_CLEAN_CLAIM
+        expr: IS_CLEAN_CLAIM
         description: "Boolean (1/0): claim passed all payer edits on first submission"
         synonyms:
           - clean claim
       - name: SUBMISSION_METHOD
+        expr: SUBMISSION_METHOD
         description: How the claim was submitted (Electronic, Paper, Portal)
       - name: FAIL_REASON
+        expr: FAIL_REASON
         description: "Reason code if not a clean claim: MISSING_AUTH, ELIGIBILITY_FAIL, CODING_ERROR, etc."
     measures:
       - name: total_claims
@@ -109,29 +120,37 @@ tables:
     description: >
       Payments received against claims from payers via ERA/835. Drives collection
       rate, payment accuracy, and underpayment analysis.
-    columns:
+    dimensions:
       - name: PAYMENT_ID
+        expr: PAYMENT_ID
         description: Unique payment identifier
         unique: true
       - name: CLAIM_ID
+        expr: CLAIM_ID
         description: Reference to the claim this payment is for
       - name: PAYER_ID
+        expr: PAYER_ID
         description: Reference to the payer who remitted this payment
       - name: PAYMENT_AMOUNT
+        expr: PAYMENT_AMOUNT
         description: Amount paid by the payer in USD
         synonyms:
           - payment
           - amount paid
           - collection
       - name: ALLOWED_AMOUNT
+        expr: ALLOWED_AMOUNT
         description: Contracted allowed amount per payer agreement in USD
         synonyms:
           - contracted amount
       - name: PAYMENT_DATE
+        expr: PAYMENT_DATE
         description: Date payment was received (YYYY-MM-DD)
       - name: PAYMENT_METHOD
+        expr: PAYMENT_METHOD
         description: "Payment method: EFT, Check, Virtual Card"
       - name: IS_ACCURATE_PAYMENT
+        expr: IS_ACCURATE_PAYMENT
         description: "Boolean (1/0): payment matches contracted reimbursement rate"
     measures:
       - name: total_payments
@@ -167,28 +186,37 @@ tables:
     description: >
       Claim denials with reason codes and appeal tracking. Drives denial analysis,
       appeal success rate, and revenue recovery metrics.
-    columns:
+    dimensions:
       - name: DENIAL_ID
+        expr: DENIAL_ID
         description: Unique denial identifier
         unique: true
       - name: CLAIM_ID
+        expr: CLAIM_ID
         description: Reference to the denied claim
       - name: DENIAL_REASON_CODE
+        expr: DENIAL_REASON_CODE
         description: "Denial reason: AUTH, DUP, ELIG, COD, TMF, MED, INFO, MOD, COORD, BUNDLE"
         synonyms:
           - reason code
           - denial code
       - name: DENIAL_REASON_DESCRIPTION
+        expr: DENIAL_REASON_DESCRIPTION
         description: Human-readable denial reason
       - name: DENIAL_DATE
+        expr: DENIAL_DATE
         description: Date the denial was issued (YYYY-MM-DD)
       - name: DENIED_AMOUNT
+        expr: DENIED_AMOUNT
         description: Dollar amount denied by the payer in USD
       - name: APPEAL_STATUS
+        expr: APPEAL_STATUS
         description: "Appeal outcome: Not Appealed, Won, Lost, or In Progress"
       - name: APPEAL_DATE
+        expr: APPEAL_DATE
         description: Date the appeal was filed (YYYY-MM-DD)
       - name: RECOVERED_AMOUNT
+        expr: RECOVERED_AMOUNT
         description: Amount recovered through successful appeal in USD
     measures:
       - name: total_denials
@@ -220,27 +248,36 @@ tables:
     description: >
       Line-item charges per encounter at CPT code granularity. Drives charge lag
       analysis and CPT-level revenue reporting.
-    columns:
+    dimensions:
       - name: CHARGE_ID
+        expr: CHARGE_ID
         description: Unique charge line identifier
         unique: true
       - name: ENCOUNTER_ID
+        expr: ENCOUNTER_ID
         description: Reference to the encounter
       - name: CPT_CODE
+        expr: CPT_CODE
         description: CPT procedure code
         synonyms:
           - procedure code
       - name: CPT_DESCRIPTION
+        expr: CPT_DESCRIPTION
         description: Description of the CPT code
       - name: UNITS
+        expr: UNITS
         description: Number of units billed
       - name: CHARGE_AMOUNT
+        expr: CHARGE_AMOUNT
         description: Charge amount per line item in USD
       - name: SERVICE_DATE
+        expr: SERVICE_DATE
         description: Date of service (YYYY-MM-DD)
       - name: POST_DATE
+        expr: POST_DATE
         description: Date charge was posted to the billing system (YYYY-MM-DD)
       - name: ICD10_CODE
+        expr: ICD10_CODE
         description: ICD-10 diagnosis code
         synonyms:
           - diagnosis code
@@ -267,21 +304,27 @@ tables:
     description: >
       Contractual write-offs and balance adjustments. Drives net collection rate
       and bad debt rate calculations.
-    columns:
+    dimensions:
       - name: ADJUSTMENT_ID
+        expr: ADJUSTMENT_ID
         description: Unique adjustment identifier
         unique: true
       - name: CLAIM_ID
+        expr: CLAIM_ID
         description: Reference to the adjusted claim
       - name: ADJUSTMENT_TYPE_CODE
+        expr: ADJUSTMENT_TYPE_CODE
         description: "Type: CONTRACTUAL, WRITEOFF, ADMIN, PROMPT_PAY, CHARITY, SMALL_BAL"
         synonyms:
           - adjustment type
       - name: ADJUSTMENT_TYPE_DESCRIPTION
+        expr: ADJUSTMENT_TYPE_DESCRIPTION
         description: Human-readable adjustment type description
       - name: ADJUSTMENT_AMOUNT
+        expr: ADJUSTMENT_AMOUNT
         description: Adjustment amount in USD
       - name: ADJUSTMENT_DATE
+        expr: ADJUSTMENT_DATE
         description: Date the adjustment was posted (YYYY-MM-DD)
     measures:
       - name: total_adjustments
@@ -309,21 +352,27 @@ tables:
     description: >
       Monthly RCM department operating costs. Drives cost-to-collect calculation
       (total RCM cost / total collections). Benchmark: ≤ 3%.
-    columns:
+    dimensions:
       - name: PERIOD
+        expr: PERIOD
         description: "Month in YYYY-MM format"
         unique: true
         synonyms:
           - month
       - name: BILLING_STAFF_COST
+        expr: BILLING_STAFF_COST
         description: Monthly billing staff salary cost in USD
       - name: SOFTWARE_COST
+        expr: SOFTWARE_COST
         description: Monthly EHR/billing software cost in USD
       - name: OUTSOURCING_COST
+        expr: OUTSOURCING_COST
         description: Monthly third-party billing cost in USD
       - name: SUPPLIES_OVERHEAD
+        expr: SUPPLIES_OVERHEAD
         description: Monthly supplies and overhead cost in USD
       - name: TOTAL_RCM_COST
+        expr: TOTAL_RCM_COST
         description: Total monthly RCM department cost in USD
     measures:
       - name: total_rcm_cost
@@ -334,7 +383,7 @@ tables:
           - billing cost
 
   # =========================================================================
-  # Dimension Tables
+  # Dimension Tables (use columns only — no measures/time_dimensions)
   # =========================================================================
 
   - name: PAYERS
@@ -422,25 +471,32 @@ tables:
     description: >
       Patient visits/encounters. Links patients and providers to downstream
       charges and claims.
-    columns:
+    dimensions:
       - name: ENCOUNTER_ID
+        expr: ENCOUNTER_ID
         description: Unique encounter identifier
         unique: true
         synonyms:
           - visit
       - name: PATIENT_ID
+        expr: PATIENT_ID
         description: Reference to the patient
       - name: PROVIDER_ID
+        expr: PROVIDER_ID
         description: Reference to the provider
       - name: DATE_OF_SERVICE
+        expr: DATE_OF_SERVICE
         description: Date of the encounter (YYYY-MM-DD)
       - name: DISCHARGE_DATE
+        expr: DISCHARGE_DATE
         description: Discharge date for inpatient stays (YYYY-MM-DD)
       - name: ENCOUNTER_TYPE
+        expr: ENCOUNTER_TYPE
         description: "Type: Outpatient, Inpatient, Emergency, Telehealth"
         synonyms:
           - visit type
       - name: DEPARTMENT
+        expr: DEPARTMENT
         description: Clinical department where encounter occurred
     measures:
       - name: total_encounters
