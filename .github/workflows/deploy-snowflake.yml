@@ -156,11 +156,81 @@ jobs:
         run: snow sql -f snowflake/catalog/tags_and_comments.sql
 
   # ────────────────────────────────────────────────────────────────────
+  # Phase 2b: Generate sample data, upload to stage, and run ETL
+  # ────────────────────────────────────────────────────────────────────
+  load-sample-data:
+    name: Load Sample Data
+    needs: deploy-etl
+    runs-on: ubuntu-latest
+    environment: snowflake-prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Snowflake CLI
+        uses: Snowflake-Labs/snowflake-cli-action@v1.5
+        with:
+          cli-version: "latest"
+          default-config-file-path: "snowflake.yml"
+
+      - name: Configure Snowflake connection
+        run: |
+          python3 - << 'PYEOF'
+          import os, stat, pathlib
+          cfg = pathlib.Path.home() / ".snowflake" / "config.toml"
+          cfg.parent.mkdir(parents=True, exist_ok=True)
+          cfg.write_text(
+              "[connections.default]\n"
+              f'account = "{os.environ["SNOWFLAKE_ACCOUNT"]}"\n'
+              f'user = "{os.environ["SNOWFLAKE_USER"]}"\n'
+              f'password = "{os.environ["SNOWFLAKE_PASSWORD"]}"\n'
+              f'database = "{os.environ["SNOWFLAKE_DATABASE"]}"\n'
+              f'schema = "{os.environ["SNOWFLAKE_SCHEMA"]}"\n'
+              f'warehouse = "{os.environ["SNOWFLAKE_WAREHOUSE"]}"\n'
+              f'role = "{os.environ["SNOWFLAKE_ROLE"]}"\n'
+          )
+          cfg.chmod(stat.S_IRUSR | stat.S_IWUSR)
+          PYEOF
+
+      - name: Generate sample CSV data
+        run: python generate_sample_data.py
+
+      - name: Upload CSVs to Snowflake stage
+        run: |
+          for csv in data/*.csv; do
+            echo "Uploading $csv..."
+            snow stage copy "$csv" @RCM_ANALYTICS.STAGING.RCM_STAGE --overwrite
+          done
+
+      - name: Run Stage→Bronze ETL
+        run: snow sql -q "CALL RCM_ANALYTICS.STAGING.SP_LOAD_STAGE_TO_BRONZE();"
+
+      - name: Run Bronze→Silver ETL
+        run: snow sql -q "CALL RCM_ANALYTICS.STAGING.SP_BRONZE_TO_SILVER();"
+
+      - name: Verify row counts
+        run: |
+          snow sql -q "
+            SELECT 'SILVER.PAYERS' AS tbl, COUNT(*) AS rows FROM RCM_ANALYTICS.SILVER.PAYERS
+            UNION ALL SELECT 'SILVER.PATIENTS', COUNT(*) FROM RCM_ANALYTICS.SILVER.PATIENTS
+            UNION ALL SELECT 'SILVER.CLAIMS', COUNT(*) FROM RCM_ANALYTICS.SILVER.CLAIMS
+            UNION ALL SELECT 'SILVER.PAYMENTS', COUNT(*) FROM RCM_ANALYTICS.SILVER.PAYMENTS
+            UNION ALL SELECT 'SILVER.DENIALS', COUNT(*) FROM RCM_ANALYTICS.SILVER.DENIALS
+            ORDER BY tbl;
+          "
+
+  # ────────────────────────────────────────────────────────────────────
   # Phase 3a: Deploy Cortex Analyst semantic model
   # ────────────────────────────────────────────────────────────────────
   deploy-cortex-model:
     name: Deploy Cortex Analyst Model
-    needs: deploy-etl
+    needs: load-sample-data
     runs-on: ubuntu-latest
     environment: snowflake-prod
     steps:
@@ -202,7 +272,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   deploy-streamlit:
     name: Deploy Streamlit App
-    needs: deploy-etl
+    needs: load-sample-data
     runs-on: ubuntu-latest
     environment: snowflake-prod
     steps:
