@@ -79,6 +79,7 @@ jobs:
           warehouse = "$SNOWFLAKE_WAREHOUSE"
           role = "$SNOWFLAKE_ROLE"
           EOF
+          chmod 0600 ~/.snowflake/config.toml
 
       - name: Deploy environment setup
         run: snow sql -f snowflake/setup/00_environment.sql
@@ -129,6 +130,7 @@ jobs:
           warehouse = "$SNOWFLAKE_WAREHOUSE"
           role = "$SNOWFLAKE_ROLE"
           EOF
+          chmod 0600 ~/.snowflake/config.toml
 
       - name: Deploy Stage→Bronze stored procedure
         run: snow sql -f snowflake/etl/load_stage_to_bronze.sql
@@ -175,6 +177,7 @@ jobs:
           warehouse = "$SNOWFLAKE_WAREHOUSE"
           role = "$SNOWFLAKE_ROLE"
           EOF
+          chmod 0600 ~/.snowflake/config.toml
 
       - name: Stage Cortex Analyst semantic model
         run: |
@@ -212,6 +215,7 @@ jobs:
           warehouse = "$SNOWFLAKE_WAREHOUSE"
           role = "$SNOWFLAKE_ROLE"
           EOF
+          chmod 0600 ~/.snowflake/config.toml
 
       - name: Fetch latest code into Snowflake Git repo
         run: |
@@ -256,6 +260,7 @@ jobs:
           warehouse = "$SNOWFLAKE_WAREHOUSE"
           role = "$SNOWFLAKE_ROLE"
           EOF
+          chmod 0600 ~/.snowflake/config.toml
 
       - name: Verify Bronze tables exist (10 expected)
         run: |
