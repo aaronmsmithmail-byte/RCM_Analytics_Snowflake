@@ -1,0 +1,13 @@
+definition_version: 2
+
+entities:
+  rcm_dashboard:
+    type: streamlit
+    identifier:
+      name: RCM_DASHBOARD
+      schema: STAGING
+      database: RCM_ANALYTICS
+    title: "Healthcare RCM Analytics Dashboard"
+    main_file: rcm_dashboard.py
+    query_warehouse: RCM_WH
+    comment: "Healthcare RCM Analytics Dashboard — 12 tabs + Cortex Analyst AI"
