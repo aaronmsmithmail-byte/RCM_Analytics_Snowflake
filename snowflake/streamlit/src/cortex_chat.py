@@ -2,9 +2,10 @@
 Cortex Analyst Integration for Healthcare RCM Analytics
 ========================================================
 
-Replaces the OpenRouter-based AI chat with Snowflake Cortex Analyst.
-Cortex Analyst uses a staged semantic model YAML to understand the data
-model and generate SQL queries against the Silver layer.
+Snowflake-native AI chat using Cortex Analyst (text-to-SQL) and
+Cortex Complete (result interpretation).  Cortex Analyst uses a staged
+semantic model YAML to understand the data model and generate SQL queries
+against the Silver layer.  No external API keys required.
 
 Usage in Streamlit in Snowflake:
     from src.cortex_chat import send_analyst_message, get_session

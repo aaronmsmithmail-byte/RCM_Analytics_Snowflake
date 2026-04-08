@@ -2,9 +2,8 @@
 Data Loader for Healthcare RCM Analytics Dashboard (Snowflake Edition)
 ======================================================================
 
-Streamlit-in-Snowflake (SiS) version of the data loader.  Instead of reading
-from a local DuckDB file, this module queries Snowflake Silver and Gold tables
-via the Snowpark session that SiS provides automatically.
+Streamlit-in-Snowflake (SiS) data loader.  This module queries Snowflake
+Silver and Gold tables via the Snowpark session that SiS provides automatically.
 
 Medallion Architecture Data Flow (Snowflake):
     Staged CSV Files
@@ -38,7 +37,7 @@ def _get_session():
 
 
 # ---------------------------------------------------------------------------
-# Parsing helpers (identical to the DuckDB version)
+# Parsing helpers
 # ---------------------------------------------------------------------------
 
 

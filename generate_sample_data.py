@@ -36,7 +36,8 @@ Running This Script:
     python generate_sample_data.py
 
     This will create/overwrite all 10 CSV files in the ./data/ directory.
-    After generating CSVs, run `python -m src.database` to load them into DuckDB.
+    After generating CSVs, upload them to the Snowflake stage (@RCM_STAGE) and
+    run the ETL pipeline (see README for full setup instructions).
 
 Reproducibility:
     We use random.seed(42) so the same data is generated every time.
@@ -56,7 +57,7 @@ from datetime import datetime, timedelta
 random.seed(42)
 
 # Load .env so RCM_DATA_DIR override is respected when running this script
-# directly (the same variable used by src/database.py ETL pipeline).
+# directly (the same variable used by the ETL pipeline).
 try:
     from dotenv import load_dotenv
 
@@ -73,7 +74,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # ===========================================================================
 # These control how much data is generated. The values below simulate a
 # mid-sized medical practice over a 2-year period. You can increase these
-# to stress-test the DuckDB database and dashboard performance.
+# to stress-test the Snowflake pipeline and dashboard performance.
 #
 # Relationships between volumes:
 #   - Not every encounter becomes a claim (some are self-pay or unbilled)
@@ -964,5 +965,5 @@ if __name__ == "__main__":
     print()
     print("=" * 60)
     print(f"Done! All 10 CSV files created in {DATA_DIR}/")
-    print("Next step: Run 'python -m src.database' to load into DuckDB.")
+    print("Next step: Upload CSVs to @RCM_STAGE and run the Snowflake ETL pipeline.")
     print("=" * 60)

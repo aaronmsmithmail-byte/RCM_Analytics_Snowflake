@@ -2,8 +2,9 @@
 Data Quality Validators for Snowflake RCM Analytics
 ====================================================
 
-SQL COUNT-based data quality assertions adapted for Snowflake.
-Uses Snowpark session instead of DuckDB connections.
+25 SQL-based data quality validators that check row counts, referential
+integrity, and data quality constraints against the Silver layer.
+Uses Snowpark session for database access.
 """
 
 from snowflake.snowpark.context import get_active_session

@@ -2,18 +2,21 @@
 Metadata Pages for Healthcare RCM Analytics Dashboard
 ======================================================
 
-This module contains six supplemental pages accessible from the sidebar:
+This module contains eight supplemental pages accessible from the sidebar:
   - Data Catalog        : Searchable table of all 23 KPIs + 10 data tables
   - Data Lineage        : DAG showing the full pipeline from CSV to dashboard
   - Knowledge Graph     : Entity-relationship diagram of the 10 data entities
   - Semantic Layer      : Business concept → KPI → raw column mapping
-  - AI Architecture     : Process diagram — how the AI chat tab uses the
-                          semantic layer, knowledge graph, and SQL tool loop
+  - AI Architecture     : Process diagram — how the AI chat tab uses Cortex
+                          Analyst (text-to-SQL) and Cortex Complete (interpretation)
                           to answer natural-language RCM questions
-  - Business Process  : Revenue cycle process map with decision points
+  - Business Process    : Revenue cycle process map with decision points
                           and live KPI annotations at each step
+  - Data Validation     : Results from 25 automated quality checks on the Silver layer
+  - Feature Backlog     : Submit and track feature requests (persisted in Snowflake)
 
-Each render_*() function is called from app.py based on st.session_state["active_page"].
+Each render_*() function is called from rcm_dashboard.py based on
+st.session_state["active_page"].
 """
 
 import pandas as pd
@@ -470,7 +473,7 @@ _TABLE_CATALOG = [
         "Layer": "Silver",
         "Table": "silver_payers",
         "Source System": "—",
-        "Key Columns": "payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL",
+        "Key Columns": "payer_id PK, payer_name, payer_type, avg_reimbursement_pct FLOAT",
         "Description": "Typed & FK-constrained — insurance payer master list",
         "Relationships": "1-to-many → silver_patients, silver_claims",
     },
@@ -502,7 +505,7 @@ _TABLE_CATALOG = [
         "Layer": "Silver",
         "Table": "silver_charges",
         "Source System": "—",
-        "Key Columns": "charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER",
+        "Key Columns": "charge_id PK, encounter_id FK, charge_amount FLOAT, units INTEGER",
         "Description": "Typed & FK-constrained — line-item charges per encounter",
         "Relationships": "Many-to-1 → silver_encounters",
     },
@@ -510,7 +513,7 @@ _TABLE_CATALOG = [
         "Layer": "Silver",
         "Table": "silver_claims",
         "Source System": "—",
-        "Key Columns": "claim_id PK, encounter_id FK, patient_id FK, payer_id FK, total_charge_amount REAL, claim_status, is_clean_claim INTEGER",
+        "Key Columns": "claim_id PK, encounter_id FK, patient_id FK, payer_id FK, total_charge_amount FLOAT, claim_status, is_clean_claim INTEGER",
         "Description": "Typed & FK-constrained — insurance claims; source of truth for KPIs",
         "Relationships": "Many-to-1 → silver_encounters, silver_payers; 1-to-many → silver_payments, silver_denials, silver_adjustments",
     },
@@ -518,7 +521,7 @@ _TABLE_CATALOG = [
         "Layer": "Silver",
         "Table": "silver_payments",
         "Source System": "—",
-        "Key Columns": "payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER",
+        "Key Columns": "payment_id PK, claim_id FK, payment_amount FLOAT, is_accurate_payment INTEGER",
         "Description": "Typed & FK-constrained — payments received against claims",
         "Relationships": "Many-to-1 → silver_claims",
     },
@@ -526,7 +529,7 @@ _TABLE_CATALOG = [
         "Layer": "Silver",
         "Table": "silver_denials",
         "Source System": "—",
-        "Key Columns": "denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL",
+        "Key Columns": "denial_id PK, claim_id FK, denial_reason_code, denied_amount FLOAT, appeal_status, recovered_amount FLOAT",
         "Description": "Typed & FK-constrained — claim denials with reason codes and appeal tracking",
         "Relationships": "Many-to-1 → silver_claims",
     },
@@ -534,7 +537,7 @@ _TABLE_CATALOG = [
         "Layer": "Silver",
         "Table": "silver_adjustments",
         "Source System": "—",
-        "Key Columns": "adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL",
+        "Key Columns": "adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount FLOAT",
         "Description": "Typed & FK-constrained — contractual write-offs and balance adjustments",
         "Relationships": "Many-to-1 → silver_claims",
     },
@@ -542,7 +545,7 @@ _TABLE_CATALOG = [
         "Layer": "Silver",
         "Table": "silver_operating_costs",
         "Source System": "—",
-        "Key Columns": "period PK, total_rcm_cost REAL",
+        "Key Columns": "period PK, total_rcm_cost FLOAT",
         "Description": "Typed & FK-constrained — monthly RCM department operating costs",
         "Relationships": "Standalone (joined by period/month to silver_claims)",
     },
@@ -617,7 +620,7 @@ _KG_NODES = [
         "size": 30,
         "group": "Reference",
         "source_system": "Payer Master",
-        "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL",
+        "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct FLOAT",
     },
     {
         "id": "patients",
@@ -663,7 +666,7 @@ _KG_NODES = [
         "size": 36,
         "group": "Transactional",
         "source_system": "Clearinghouse",
-        "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount REAL, claim_status, is_clean_claim INTEGER",
+        "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount FLOAT, claim_status, is_clean_claim INTEGER",
     },
     # Leaf transactional nodes
     {
@@ -675,7 +678,7 @@ _KG_NODES = [
         "size": 26,
         "group": "Transactional",
         "source_system": "EHR / Charge Capture",
-        "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date",
+        "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount FLOAT, units INTEGER, service_date, post_date",
     },
     {
         "id": "payments",
@@ -686,7 +689,7 @@ _KG_NODES = [
         "size": 26,
         "group": "Transactional",
         "source_system": "Clearinghouse / ERA",
-        "hover": "silver_payments: payment_id PK, claim_id FK, payer_id FK → silver_payers, payment_amount REAL, allowed_amount REAL, is_accurate_payment INTEGER",
+        "hover": "silver_payments: payment_id PK, claim_id FK, payer_id FK → silver_payers, payment_amount FLOAT, allowed_amount FLOAT, is_accurate_payment INTEGER",
     },
     {
         "id": "denials",
@@ -697,7 +700,7 @@ _KG_NODES = [
         "size": 26,
         "group": "Transactional",
         "source_system": "Clearinghouse / ERA",
-        "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL",
+        "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount FLOAT, appeal_status, recovered_amount FLOAT",
     },
     {
         "id": "adjustments",
@@ -708,7 +711,7 @@ _KG_NODES = [
         "size": 26,
         "group": "Transactional",
         "source_system": "Billing System",
-        "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL",
+        "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount FLOAT",
     },
     # Operational
     {
@@ -720,7 +723,7 @@ _KG_NODES = [
         "size": 26,
         "group": "Operational",
         "source_system": "ERP / Finance",
-        "hover": "silver_operating_costs: period PK, total_rcm_cost REAL",
+        "hover": "silver_operating_costs: period PK, total_rcm_cost FLOAT",
     },
 ]
 
@@ -980,7 +983,7 @@ _SEMANTIC_LAYER_FALLBACK = [
     },
 ]
 
-# Aliases for database.py imports (which expect these names without _FALLBACK suffix)
+# Aliases used by the rest of this module (without _FALLBACK suffix)
 _KPI_CATALOG = _KPI_CATALOG_FALLBACK
 _SEMANTIC_LAYER = _SEMANTIC_LAYER_FALLBACK
 
@@ -1422,66 +1425,66 @@ def render_data_lineage():
         {
             "Layer": "Bronze",
             "Stage": "2. Raw Landing",
-            "Component": "database.py → load_csv_to_bronze()",
-            "Input": "CSV files",
-            "Output": "bronze_* tables (all TEXT)",
-            "Description": "Data lands as-is. All columns TEXT. _loaded_at timestamp records ingestion time.",
+            "Component": "COPY INTO (load_stage_to_bronze.sql)",
+            "Input": "CSV files from @RCM_STAGE",
+            "Output": "BRONZE.* tables (all VARCHAR)",
+            "Description": "Data lands as-is. All columns VARCHAR. _LOADED_AT timestamp records ingestion time.",
         },
         {
             "Layer": "Silver",
             "Stage": "3. ETL Transform",
-            "Component": "database.py → _etl_bronze_to_silver()",
-            "Input": "bronze_* tables",
-            "Output": "silver_* tables (typed)",
-            "Description": "CAST to REAL/INTEGER, normalise booleans ('True'→1), enforce FK constraints, skip NULL PKs.",
+            "Component": "SP_BRONZE_TO_SILVER() stored procedure",
+            "Input": "BRONZE.* tables",
+            "Output": "SILVER.* tables (typed)",
+            "Description": "TRY_CAST to FLOAT/INTEGER, normalise booleans ('True'→1), enforce FK constraints, skip NULL PKs.",
         },
         {
             "Layer": "Gold",
             "Stage": "4. Gold Views",
-            "Component": "database.py → gold_* SQL VIEWs (5 views)",
-            "Input": "silver_* tables",
+            "Component": "03_gold_views.sql (5 views)",
+            "Input": "SILVER.* tables",
             "Output": "Pre-aggregated KPI views",
             "Description": "SQL VIEWs aggregate Silver by month, payer, dept, aging bucket, denial code.",
         },
         {
             "Layer": "Silver",
             "Stage": "5. Validate",
-            "Component": "validators.py → validate_all(db_path)",
-            "Input": "silver_* tables (via SQL)",
+            "Component": "validators.py → run_all_validators()",
+            "Input": "SILVER.* tables (via Snowpark SQL)",
             "Output": "Issue list",
-            "Description": "6 SQL COUNT assertions directly against Silver tables; issues shown in sidebar Data Quality panel.",
+            "Description": "25 SQL-based validators (row counts, referential integrity, data quality); issues shown in sidebar and Data Validation page.",
         },
         {
             "Layer": "Application",
             "Stage": "6. Build FilterParams",
-            "Component": "app.py sidebar widgets",
+            "Component": "rcm_dashboard.py sidebar widgets",
             "Input": "User selections (date, payer, dept, enc type)",
             "Output": "FilterParams dataclass",
-            "Description": "Packages 4 filter dimensions into a typed dataclass; passed to all 17 metric functions.",
+            "Description": "Packages 4 filter dimensions into a typed dataclass; passed to all 26 metric functions.",
         },
         {
             "Layer": "Silver",
             "Stage": "7. KPI Metrics",
             "Component": "metrics.py → query_*(FilterParams)",
-            "Input": "FilterParams + silver_* tables (via parameterized SQL)",
+            "Input": "FilterParams + SILVER.* tables (via Snowpark SQL)",
             "Output": "(scalar, DataFrame) or DataFrame per KPI",
-            "Description": "17 SQL queries using build_filter_cte() CTE pattern; filters applied at the database level.",
+            "Description": "26 SQL queries using a shared filtered_claims CTE pattern; filters applied at the database level.",
         },
         {
             "Layer": "Application",
             "Stage": "8. Sidebar Widgets",
             "Component": "data_loader.py → load_all_data()",
-            "Input": "silver_* tables",
+            "Input": "SILVER.* tables",
             "Output": "Payer / dept / enc-type dropdown options",
             "Description": "Loads minimal Silver data to populate sidebar filter dropdowns; cached by @st.cache_data.",
         },
         {
             "Layer": "Presentation",
             "Stage": "9. Visualize",
-            "Component": "app.py tabs 1–6",
+            "Component": "rcm_dashboard.py tabs 1–12",
             "Input": "Metric results",
             "Output": "Plotly charts, KPI scorecards",
-            "Description": "6 dashboard tabs render charts and KPI cards from metric outputs.",
+            "Description": "12 dashboard tabs render charts and KPI cards from metric outputs.",
         },
     ]
     st.dataframe(pd.DataFrame(pipeline_table), use_container_width=True)
@@ -1730,7 +1733,7 @@ Sidebar Selections
     start_date, end_date, payer_id, department, encounter_type
         │
         ▼
-  FilterParams  (dataclass — built once per render in app.py)
+  FilterParams  (dataclass — built once per render in rcm_dashboard.py)
         │
         ▼
   build_filter_cte()  ──▶  WITH filtered_claims AS (

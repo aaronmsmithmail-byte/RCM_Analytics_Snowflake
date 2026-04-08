@@ -2,7 +2,7 @@ __pycache__/
 *.pyc
 # Ignore Streamlit secrets but track config
 .streamlit/secrets.toml
-# SQLite database is generated from CSVs — no need to track in git
+# Generated database files — not tracked
 *.db
 # Claude Code internal state (ignore everything except committed plugins)
 .claude/*
