@@ -70,6 +70,27 @@ GRANT OWNERSHIP ON ALL SCHEMAS IN DATABASE RCM_ANALYTICS TO ROLE SYSADMIN COPY C
 GRANT USAGE ON SECRET RCM_ANALYTICS.STAGING.GITHUB_SECRET TO ROLE SYSADMIN;
 GRANT USAGE ON INTEGRATION GITHUB_INTEGRATION TO ROLE SYSADMIN;
 GRANT OWNERSHIP ON WAREHOUSE RCM_WH TO ROLE SYSADMIN COPY CURRENT GRANTS;
+GRANT EXECUTE TASK ON ACCOUNT TO ROLE SYSADMIN;
+
+-- 1f. Create CI/CD service account (used by GitHub Actions deployment pipeline)
+-- This user authenticates via password with MFA exempted for programmatic access.
+-- <REPLACE> Set a strong password below
+CREATE USER IF NOT EXISTS RCM_DEPLOY_SVC
+    PASSWORD = '<your_deploy_password>'              -- <REPLACE> Strong password for CI/CD
+    DEFAULT_ROLE = SYSADMIN
+    DEFAULT_WAREHOUSE = RCM_WH
+    COMMENT = 'Service account for GitHub Actions CD pipeline';
+
+GRANT ROLE SYSADMIN TO USER RCM_DEPLOY_SVC;
+GRANT ROLE ACCOUNTADMIN TO USER RCM_DEPLOY_SVC;
+
+-- 1g. Exempt the service account from MFA (required for programmatic access)
+CREATE OR REPLACE AUTHENTICATION POLICY RCM_DEPLOY_NO_MFA
+    MFA_ENROLLMENT = 'OPTIONAL'
+    CLIENT_TYPES = ('SNOWFLAKE_UI', 'DRIVERS')
+    COMMENT = 'No MFA for CI/CD service account';
+
+ALTER USER RCM_DEPLOY_SVC SET AUTHENTICATION POLICY RCM_DEPLOY_NO_MFA;
 
 
 -- ============================================================================
