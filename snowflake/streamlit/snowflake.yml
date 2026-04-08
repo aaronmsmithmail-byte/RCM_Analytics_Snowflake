@@ -11,3 +11,6 @@ entities:
     main_file: rcm_dashboard.py
     query_warehouse: RCM_WH
     comment: "Healthcare RCM Analytics Dashboard — 12 tabs + Cortex Analyst AI"
+    artifacts:
+      - environment.yml
+      - src/
