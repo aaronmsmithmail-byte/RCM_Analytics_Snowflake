@@ -33,7 +33,7 @@ CSV files → Snowflake Internal Stage (@RCM_STAGE)
 | `snowflake/streamlit/src/metrics.py` | All 26 `query_*` KPI functions + `FilterParams` dataclass |
 | `snowflake/streamlit/src/data_loader.py` | Snowpark session-based data loading |
 | `snowflake/streamlit/src/cortex_chat.py` | Cortex Analyst chat UI (replaces OpenRouter) |
-| `snowflake/streamlit/src/metadata_pages.py` | Seven sidebar metadata pages |
+| `snowflake/streamlit/src/metadata_pages.py` | Eight sidebar metadata pages |
 | `snowflake/streamlit/src/validators.py` | SQL COUNT-based data quality assertions |
 | `generate_sample_data.py` | Creates CSV files for upload to Snowflake stage |
 | `snowflake/deploy.sql` | Master deployment script |
@@ -175,3 +175,28 @@ make deploy    # deploy DDL to Snowflake
 - Deploys on push to `main` when `snowflake/**` files change
 - Requires GitHub Secrets: `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`
 - Snowflake CLI config template: `snowflake.yml.example`
+
+---
+
+## Governance & Standards
+
+| Area | Document | Scope |
+|------|----------|-------|
+| Coding conventions | `.claude/skills/standards.md` | Naming, SQL formatting, imports, testing, security, CI/CD |
+| Development workflow | `.claude/skills/feature-workflow.md` | 6-stage workflow (Plan → Approve → Code → Verify → Review → Deploy) |
+| Contributing guide | `CONTRIBUTING.md` | Branching strategy, commit conventions, review process, SQL change management |
+| PR template | `.github/pull_request_template.md` | Standardized PR format with type-specific checklists |
+| Code ownership | `.github/CODEOWNERS` | Automated review routing by file area |
+| Review agents | `.claude/agents/` | 5 specialized agents (code-reviewer, simplifier, comment-analyzer, test-analyzer, silent-failure-hunter) |
+| Data classification | `snowflake/catalog/tags_and_comments.sql` | Horizon Data Catalog: PII tags, data domain tags, column descriptions |
+| Security scanning | `bandit.toml` + CI pipeline | Bandit (static analysis) + pip-audit (dependency vulnerabilities) |
+
+### Commit Convention
+Use **Conventional Commits**: `<type>: <summary>` where type is one of:
+`feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `ddl`, `style`, `chore`
+
+### Branch Naming
+`<type>/<short-description>` — e.g. `feature/add-provider-tab`, `ddl/add-referral-column`, `fix/denial-rate-calc`
+
+### DDL Change Process
+Schema changes require the DDL checklist in the PR template. See `CONTRIBUTING.md` for the full process (backwards compatibility rules, rollback plan, downstream update order).

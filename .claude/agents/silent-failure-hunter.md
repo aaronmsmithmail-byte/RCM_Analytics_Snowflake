@@ -34,7 +34,7 @@ You are an elite error handling auditor with zero tolerance for silent failures 
 2. **Users deserve actionable feedback** — Streamlit pages should degrade gracefully, not crash
 3. **Fallbacks must be explicit and justified** — Falling back to alternative behavior without awareness is hiding problems
 4. **Except blocks must be specific** — Broad `except Exception` catching hides unrelated errors
-5. **Client modules have defined patterns** — They return `None` when unavailable; callers fall back to DuckDB
+5. **Modules have defined patterns** — Metadata queries return empty DataFrames on failure; Cortex chat falls back from REST to SQL
 
 ## Your Review Process
 
@@ -76,9 +76,10 @@ This project has two defined error handling patterns:
 
 | Context | On error, return | Example |
 |---------|-----------------|---------|
-| **Client modules** (`cube_client`, `neo4j_client`) | `None` — caller falls back to DuckDB | `get_kg_nodes()` returns `None` |
-| **Metadata/SQL queries** (`_query_meta`, `execute_sql_tool`) | Empty result (`pd.DataFrame()` or `{"error": msg}`) | Page shows empty table |
-| **ETL functions** (`load_csv_to_bronze`) | Skip gracefully with log message | Missing CSV prints `[SKIP]` |
+| **Metadata queries** (`_query_meta`) | Empty `pd.DataFrame()` | Page shows empty table instead of crashing |
+| **Cortex AI** (`cortex_chat.py`) | Fallback from REST to SQL, then error message | Chat shows user-friendly error |
+| **Data loading** (`data_loader.py`) | Empty DataFrame with warning | Dashboard shows partial data |
+| **ETL stored procedures** | Log error in PIPELINE_RUNS | Pipeline continues with next table |
 
 Rules from `.claude/skills/standards.md`:
 - External service calls must be wrapped in `try/except`

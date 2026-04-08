@@ -2,18 +2,20 @@
 Healthcare Revenue Cycle Management (RCM) Analytics Dashboard
 =============================================================
 
-This is the main Streamlit application that provides an interactive,
-multi-tab dashboard for monitoring healthcare revenue cycle KPIs.
+This is the main Streamlit in Snowflake (SiS) application that provides an
+interactive, multi-tab dashboard for monitoring healthcare revenue cycle KPIs.
 
 Architecture:
     ┌──────────────────────────────────────────────────────────┐
-    │                    Streamlit App (app.py)                 │
-    │  ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐  │
-    │  │  Tab 1   │  │  Tab 2   │  │  Tab 3   │  │ Tab 4-6 │  │
-    │  │ Summary  │  │ Revenue  │  │ Claims   │  │  More   │  │
-    │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬────┘  │
-    │       └──────────────┴─────────────┴─────────────┘       │
-    │                         │                                 │
+    │              Streamlit App (rcm_dashboard.py)             │
+    │  ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
+    │  │ Tab 1-4 │  │ Tab 5-8  │  │ Tab 9-11 │  │  Tab 12  │ │
+    │  │ Summary │  │  Payer/  │  │ Underpy/ │  │    AI    │ │
+    │  │ Revenue │  │  Dept/   │  │ Forecast │  │Assistant │ │
+    │  │ Claims  │  │ Provider │  │ Patient  │  │ (Cortex) │ │
+    │  └────┬────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘ │
+    │       └─────────────┴────────────┴──────────────┘       │
+    │                         │                                │
     │              ┌──────────▼──────────┐                     │
     │              │ Metrics Engine      │                     │
     │              │ (src/metrics.py)    │                     │
@@ -24,29 +26,40 @@ Architecture:
     │              └──────────┬──────────┘                     │
     │              ┌──────────▼──────────┐                     │
     │              │ Snowflake Database  │                     │
-    │              │ (data/*.db)         │                     │
+    │              │ (RCM_ANALYTICS)     │                     │
     │              └─────────────────────┘                     │
     └──────────────────────────────────────────────────────────┘
 
 Dashboard Tabs:
-    1. Executive Summary  — 8 KPI scorecards + key trends + volume
-    2. Collections & Revenue — Revenue waterfall, collection trends, cost analysis
-    3. Claims & Denials   — Denial analysis, clean claims, charge lag, appeals
-    4. A/R Aging & Cash   — Aging buckets, DAR trend, monthly cash flow
-    5. Payer Analysis     — Revenue by payer, denial rates, payer comparison
-    6. Department Perf.   — Revenue by department, encounter mix
+     1. Executive Summary     — 8 KPI scorecards + key trends + volume
+     2. Collections & Revenue — Revenue waterfall, collection trends, cost analysis
+     3. Claims & Denials      — Denial analysis, clean claims, charge lag, appeals
+     4. A/R Aging & Cash Flow — Aging buckets, DAR trend, monthly cash flow
+     5. Payer Analysis        — Revenue by payer, denial rates, payer comparison
+     6. Department Perf.      — Revenue by department, encounter mix
+     7. Provider Performance  — Provider scorecard, outlier detection
+     8. CPT Code Analysis     — Revenue and denial patterns by procedure code
+     9. Underpayment Analysis — ERA allowed vs. paid variance by payer
+    10. Forecasting           — Linear projections + what-if scenario modelling
+    11. Patient Responsibility— Patient-owed portion by payer, department, trend
+    12. AI Assistant          — Cortex Analyst text-to-SQL + Cortex Complete interpretation
+
+Sidebar Metadata Pages (8 pages):
+    Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer ·
+    AI Architecture · Business Process · Data Validation · Feature Backlog
 
 How Streamlit Works (for educational purposes):
     - Streamlit reruns this entire script top-to-bottom on every user interaction
       (filter change, tab switch, etc.).
-    - @st.cache_data prevents reloading data from the database on every rerun.
+    - @st.cache_data prevents reloading data from Snowflake on every rerun.
     - Sidebar widgets (selectbox, date_input) return the user's current selection.
     - st.tabs() creates a tabbed interface; content under each `with tab:` block
       only renders when that tab is active.
 
-Running the Dashboard:
-    pip install -r requirements.txt
-    streamlit run app.py
+Deployment:
+    This app runs in Streamlit in Snowflake (SiS). Deploy via the SQL command:
+        CREATE STREAMLIT ... ROOT_LOCATION = '@RCM_REPO/branches/main/snowflake/streamlit'
+    See the README for full setup instructions.
 """
 
 import io

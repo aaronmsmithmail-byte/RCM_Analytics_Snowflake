@@ -4,7 +4,7 @@ A comprehensive Streamlit in Snowflake (SiS) application for monitoring and anal
 
 ## Overview
 
-This dashboard provides healthcare organizations with interactive visualizations across twelve analytical tabs plus six metadata pages:
+This dashboard provides healthcare organizations with interactive visualizations across twelve analytical tabs plus eight metadata pages:
 
 | Tab | Description |
 |-----|-------------|
@@ -21,7 +21,7 @@ This dashboard provides healthcare organizations with interactive visualizations
 | **Patient Responsibility** | Patient-owed portion (co-pay/deductible/coinsurance) by payer, department, and encounter type |
 | **AI Assistant** | Natural-language chat interface — asks questions, queries the database live via tool calling, and explains results in plain language |
 
-**Metadata pages** (sidebar navigation): Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer · AI Architecture · Business Process
+**Metadata pages** (sidebar navigation): Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer · AI Architecture · Business Process · Data Validation · Feature Backlog
 
 Every data tab includes **CSV and Excel export buttons**. A **KPI alert system** in the sidebar flags threshold breaches in real time, and a **data pipeline freshness panel** shows the last ETL run time and status for each of the 10 data domains.
 
@@ -143,52 +143,29 @@ Then open the app: **Projects > Streamlit > RCM_DASHBOARD**
 
 The app reads code directly from the Git repo, so pushing changes to `main` and running `ALTER GIT REPOSITORY RCM_REPO FETCH;` automatically updates the dashboard.
 
-### Full Stack with Docker Compose (Cube + Neo4j)
-
-For the enterprise experience with Cube semantic layer and Neo4j knowledge graph:
-
-```bash
-./start.sh    # handles everything, including Docker
-```
-
-Or manually:
-
-```bash
-docker compose up -d
-streamlit run app.py
-```
-
-| Service | URL | Purpose |
-|---------|-----|---------|
-| Streamlit | http://localhost:8501 | Dashboard |
-| Cube | http://localhost:4000 | Semantic layer REST API + Playground |
-| Neo4j | http://localhost:7474 | Knowledge graph browser |
-
-The app auto-detects available services and shows connection status on the metadata pages. When Cube/Neo4j are unavailable, it falls back to DuckDB seamlessly.
-
 ---
 
 ## Data Architecture — Medallion Layers
 
-All data flows through a three-layer medallion architecture stored in a local DuckDB database (`rcm_analytics.db`):
+All data flows through a three-layer medallion architecture in Snowflake (`RCM_ANALYTICS` database):
 
-| Layer | Tables/Views | Description |
-|-------|-------------|-------------|
-| **Bronze** | 10 tables (`bronze_*`) | Raw TEXT ingestion from CSV — no type casting, full audit trail via `_loaded_at` timestamp |
-| **Silver** | 10 tables (`silver_*`) | Cleaned, typed (REAL/INTEGER/TEXT), FK-constrained — source of truth for all KPI computation |
-| **Gold** | 5 views (`gold_*`) | Pre-aggregated business views computed at query time from Silver |
+| Layer | Schema | Tables/Views | Description |
+|-------|--------|-------------|-------------|
+| **Bronze** | `BRONZE` | 10 tables (e.g. `CLAIMS`, `PAYMENTS`) | Raw VARCHAR ingestion from CSV via `COPY INTO` — no type casting, full audit trail via `_LOADED_AT` timestamp |
+| **Silver** | `SILVER` | 10 tables (e.g. `CLAIMS`, `PAYMENTS`) | Cleaned, typed (FLOAT/INTEGER/VARCHAR), FK-constrained — source of truth for all KPI computation |
+| **Gold** | `GOLD` | 5 views (e.g. `MONTHLY_KPIS`, `PAYER_PERFORMANCE`) | Pre-aggregated business views computed at query time from Silver |
 
-A `pipeline_runs` metadata table records the last load time, row count, and source file for each domain. The dashboard reads this table to power the data freshness sidebar panel.
+A `METADATA.PIPELINE_RUNS` table records the last load time, row count, and source file for each domain. The dashboard reads this table to power the data freshness sidebar panel.
 
 ### Gold Views
 
 | View | Description |
 |------|-------------|
-| `gold_monthly_kpis` | Monthly claim counts, charges, payments, CCR, denial rate, GCR |
-| `gold_payer_performance` | Revenue, volume, and collection metrics per payer |
-| `gold_department_performance` | Revenue, encounter count, and revenue-per-encounter by department |
-| `gold_ar_aging` | Outstanding AR grouped into 0–30, 31–60, 61–90, 91–120, 120+ day buckets |
-| `gold_denial_analysis` | Denial volume, dollars denied, and recovery rate by reason code |
+| `GOLD.MONTHLY_KPIS` | Monthly claim counts, charges, payments, CCR, denial rate, GCR |
+| `GOLD.PAYER_PERFORMANCE` | Revenue, volume, and collection metrics per payer |
+| `GOLD.DEPARTMENT_PERFORMANCE` | Revenue, encounter count, and revenue-per-encounter by department |
+| `GOLD.AR_AGING` | Outstanding AR grouped into 0–30, 31–60, 61–90, 91–120, 120+ day buckets |
+| `GOLD.DENIAL_ANALYSIS` | Denial volume, dollars denied, and recovery rate by reason code |
 
 ### Horizon Data Catalog
 
@@ -225,56 +202,77 @@ A shared `WITH filtered_claims AS (...)` CTE joins `silver_claims` to `silver_en
 ## Project Structure
 
 ```
-RCM_Analytics_test/
-├── app.py                   # Main Streamlit dashboard (12 tabs + sidebar)
-├── generate_sample_data.py  # Synthetic data generation script
-├── requirements.txt         # Python dependencies
-├── Dockerfile               # Container build for deployment
-├── .env                     # OPENROUTER_API_KEY (not committed — create locally)
+RCM_Analytics_Snowflake/
+├── generate_sample_data.py          # Synthetic CSV data generation (10 files, ~12K rows)
+├── requirements.txt                 # Python dependencies
+├── Makefile                         # Dev commands: test, lint, verify, deploy
+├── CLAUDE.md                        # AI assistant project guide
+├── LICENSE                          # MIT license
+├── .env.example                     # Environment variable template
+├── snowflake.yml.example            # Snowflake CLI config template
 ├── .streamlit/
-│   └── config.toml          # Streamlit server and theme settings
+│   └── config.toml                  # Streamlit server and theme settings
 ├── .github/
 │   └── workflows/
-│       └── ci.yml           # CI pipeline (lint, test, security — 3 parallel jobs)
-├── data/                    # CSV data files + rcm_analytics.db (generated)
-├── src/
-│   ├── __init__.py
-│   ├── database.py          # Medallion schema, ETL, build_filter_cte(), schema migration
-│   ├── data_loader.py       # Sidebar widget population helpers
-│   ├── metadata_pages.py    # Data Catalog, Data Lineage, Knowledge Graph, Semantic Layer,
-│   │                        #   AI Architecture, Business Process (6 metadata pages)
-│   ├── metrics.py           # SQL-based KPI engine (23 query_* functions + FilterParams)
-│   ├── ai_chat.py           # AI Assistant backend: TOOL_SCHEMA, execute_sql_tool(),
-│   │                        #   run_agentic_turn(), build_system_prompt()
-│   └── validators.py        # SQL COUNT-based data integrity checks
+│       ├── ci.yml                   # CI pipeline (lint, test, security — 3 parallel jobs)
+│       └── deploy-snowflake.yml     # CD pipeline (DDL → ETL → Cortex → Streamlit)
+├── data/                            # Generated CSV files (not committed — run generate_sample_data.py)
+├── snowflake/
+│   ├── setup/
+│   │   ├── 00_environment.sql       # Database, schemas, warehouse creation
+│   │   └── full_setup.sql           # One-script deployment via Git integration (recommended)
+│   ├── ddl/
+│   │   ├── 01_bronze_tables.sql     # Bronze layer — raw VARCHAR tables
+│   │   ├── 02_silver_tables.sql     # Silver layer — typed tables with FKs
+│   │   ├── 03_gold_views.sql        # Gold layer — aggregated views
+│   │   ├── 04_metadata_tables.sql   # KPI catalog, semantic layer, knowledge graph tables
+│   │   └── 05_stages.sql            # Internal stage and file format
+│   ├── etl/
+│   │   ├── load_stage_to_bronze.sql           # SP_LOAD_STAGE_TO_BRONZE() stored procedure
+│   │   ├── transform_bronze_to_silver.sql     # SP_BRONZE_TO_SILVER() stored procedure
+│   │   ├── seed_metadata.sql                  # KPI definitions, semantic layer, knowledge graph
+│   │   └── tasks.sql                          # DAILY_ETL_TASK (cron-scheduled ETL)
+│   ├── cortex/
+│   │   └── rcm_semantic_model.yaml  # Cortex Analyst semantic model (10 tables, metrics, joins)
+│   ├── catalog/
+│   │   └── tags_and_comments.sql    # Horizon Data Catalog (tags, comments, PII classification)
+│   ├── diag/
+│   │   └── check_data.sql           # Diagnostic queries for verifying data loads
+│   ├── deploy.sql                   # Master deployment script (runs DDL + ETL in order)
+│   └── streamlit/
+│       ├── rcm_dashboard.py         # Main SiS app: 12 tabs + sidebar + metadata page router
+│       ├── environment.yml          # Snowflake Anaconda channel dependencies for SiS
+│       └── src/
+│           ├── metrics.py           # 26 query_* KPI functions + FilterParams dataclass
+│           ├── data_loader.py       # Snowpark session-based data loading (Bronze/Silver/Gold)
+│           ├── cortex_chat.py       # Cortex Analyst + Cortex Complete AI chat UI
+│           ├── metadata_pages.py    # 8 metadata pages (catalog, lineage, KG, semantic, AI, etc.)
+│           └── validators.py        # 25 SQL-based data quality validators
 └── tests/
-    ├── __init__.py
-    ├── test_metrics.py      # 110 unit tests for KPI metric functions
-    └── test_validators.py   # 40 unit tests for data validators
+    ├── test_generate_data.py        # CSV generation tests (file existence, row counts)
+    └── test_snowflake_sql.py        # SQL/Python static analysis (no DuckDB patterns, correct Snowflake syntax)
 ```
 
 ---
 
 ## Configuration Reference
 
-All configuration is handled through environment variables loaded from a `.env` file.  Copy `.env.example` to `.env` and override only what you need — every variable has a default.
+**When running inside Streamlit in Snowflake (SiS):** No configuration is needed — the Snowpark session is provided automatically, and the AI Assistant uses Snowflake Cortex functions (no external API keys required).
+
+**For local development only:** Copy `.env.example` to `.env` and configure your Snowflake connection:
 
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
-| `OPENROUTER_API_KEY` | — | Yes (AI tab only) | API key for the OpenRouter LLM gateway. Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys). All other tabs work without it. |
-| *(none required)* | — | — | The AI Assistant uses Snowflake Cortex AI functions (no external API keys needed). |
-| `AI_MAX_ROWS` | `100` | No | Maximum rows the AI tool returns per SQL query. Lower to reduce token cost; raise for wider result sets (min 10). |
-| `AI_MAX_ITERATIONS` | `8` | No | Maximum tool-call loop iterations per AI turn — one iteration = one SQL query + one LLM round-trip (min 1). |
-| `CUBE_API_URL` | `http://localhost:4000/cubejs-api/v1` | No | REST API URL for the Cube semantic layer. Metrics route through Cube when available; falls back to raw DuckDB SQL otherwise. |
-| `CUBE_API_SECRET` | `change_me_before_deploying` | No | Shared secret used to sign Cube JWT tokens. Use a strong random value in production (`openssl rand -hex 32`). |
-| `NEO4J_URI` | `bolt://localhost:7687` | No | Bolt connection URI for the Neo4j knowledge graph. Falls back to DuckDB `meta_kg_*` tables when unavailable. |
-| `NEO4J_USER` | `neo4j` | No | Neo4j username. |
-| `NEO4J_PASSWORD` | `change_me_before_deploying` | No | Neo4j password. Use a strong value in production. |
-| `RCM_DB_PATH` | `./data/rcm_analytics.db` | No | Path to the DuckDB database file. Override for Docker volume mounts or shared network paths. |
-| `RCM_DATA_DIR` | `./data/` | No | Directory containing the CSV source files. Used by `generate_sample_data.py` and the ETL pipeline. |
-| `STREAMLIT_SERVER_PORT` | `8501` | No | Port the Streamlit server listens on. Standard Streamlit env var. |
-| `STREAMLIT_SERVER_ADDRESS` | `localhost` | No | Bind address. Set to `0.0.0.0` to accept external connections (Docker). |
-| `STREAMLIT_BROWSER_GATHER_USAGE_STATS` | `true` | No | Set to `false` to disable Streamlit's anonymous usage reporting in production. |
+| `SNOWFLAKE_ACCOUNT` | — | Local dev only | Snowflake account identifier (e.g. `xy12345.us-east-1`) |
+| `SNOWFLAKE_USER` | — | Local dev only | Snowflake username |
+| `SNOWFLAKE_PASSWORD` | — | Local dev only | Snowflake password |
+| `SNOWFLAKE_DATABASE` | `RCM_ANALYTICS` | No | Target database |
+| `SNOWFLAKE_SCHEMA` | `SILVER` | No | Default schema |
+| `SNOWFLAKE_WAREHOUSE` | `RCM_WH` | No | Compute warehouse |
+| `SNOWFLAKE_ROLE` | `SYSADMIN` | No | Snowflake role |
+| `RCM_DATA_DIR` | `./data/` | No | Directory where `generate_sample_data.py` writes CSV files |
+| `STREAMLIT_SERVER_PORT` | `8501` | No | Port the Streamlit server listens on (local dev) |
+| `STREAMLIT_SERVER_ADDRESS` | `localhost` | No | Bind address (local dev) |
 
 > **Adding a new variable?**  Add it to `.env.example` with a comment explaining the default, expected values, and impact.  Then update this table.
 
@@ -315,7 +313,7 @@ All configuration is handled through environment variables loaded from a `.env` 
 | 22 | Patient Financial Responsibility | Patient-owed portion (co-pay/deductible) by payer, dept, trend |
 | 23 | Data Freshness | Last ETL load time, row count, and staleness per domain |
 
-All metrics are implemented as parameterized SQL queries against the Silver layer (`query_*` functions in `src/metrics.py`).
+All metrics are implemented as parameterized SQL queries against the Silver layer (`query_*` functions in `snowflake/streamlit/src/metrics.py`).
 
 ---
 
@@ -403,6 +401,8 @@ A conversational interface powered by a **two-stage Snowflake-native AI pipeline
 - **Semantic Layer** — Business concept → KPI → source table/column mapping for every metric
 - **AI Architecture** — Process flow diagram showing the two-stage pipeline: Cortex Analyst (text-to-SQL via semantic model) and Cortex Complete (business interpretation of results)
 - **Business Process** — Revenue cycle process map with decision points (clean claim?, payer decision?, appeal?) and live KPI annotations at each step, linking business processes to the dashboard tabs that measure them
+- **Data Validation** — Results from 25 automated quality checks run against the Silver layer on every app startup (row counts, referential integrity, data quality)
+- **Feature Backlog** — Submit, prioritize, and track feature requests — persisted in Snowflake `METADATA.FEATURE_BACKLOG` table
 
 ---
 
@@ -426,29 +426,18 @@ When any KPI breaches its threshold, the sidebar shows a red alert badge with th
 A **🟢/🟡/🔴 Data Pipeline** panel shows the last ETL run time, row count, and staleness status for all 10 data domains. Status is computed against the expected refresh cadence per domain (e.g. claims: 4h, encounters: 2h, operating costs: 720h).
 
 ### Data Quality
-On startup, `src/validators.py` runs six SQL COUNT assertions against the Silver tables:
+On startup, `snowflake/streamlit/src/validators.py` runs 25 SQL-based validation checks against the Silver layer:
 
-| Check | Level |
-|-------|-------|
-| Negative monetary amounts | Warning |
-| Orphaned foreign keys | Warning |
-| Null values in required columns | Error |
-| Dates outside the 2020–2030 range | Warning |
-| Unexpected claim status values | Warning |
-| Null values in boolean columns | Warning |
+| Category | Checks | Level |
+|----------|--------|-------|
+| Row count (all 10 tables non-empty) | 10 | Error |
+| Referential integrity (FK relationships) | 8 | Error |
+| No negative monetary amounts | 3 | Error |
+| Valid claim status values | 1 | Error |
+| Boolean column integrity | 2 | Error |
+| No null primary keys | 1 | Error |
 
-Issues appear in a collapsible **Data Quality** panel. Errors expand automatically; warnings are collapsed by default.
-
----
-
-## Running with Docker
-
-```bash
-docker build -t rcm-analytics .
-docker run -p 8501:8501 rcm-analytics
-```
-
-The app will be available at `http://localhost:8501`.
+Issues appear in a collapsible **Data Quality** panel and on the dedicated **Data Validation** metadata page.
 
 ---
 
@@ -479,7 +468,30 @@ make security  # bandit + pip-audit
 pytest tests/ -v
 ```
 
-**362 tests total** — 151 metric tests (`test_metrics.py`), 40 validator tests (`test_validators.py`), 31 app utility tests (`test_app_utils.py`), 22 ETL pipeline tests (`test_etl_pipeline.py`), 22 AI SQL tool tests (`test_ai_chat_sql.py`), 19 data loader tests (`test_data_loader.py`), 15 AI prompt tests (`test_ai_chat_prompt.py`), 15 database tests (`test_database.py`), 11 AI agentic loop tests (`test_ai_chat_agentic.py`), 10 AI config tests (`test_ai_chat_config.py`), 9 Cube client tests (`test_cube_client.py`), and 7 Neo4j client tests (`test_neo4j_client.py`). The metric, validator, and database suites use DuckDB `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results. The ETL tests verify CSV→Bronze loading, Bronze→Silver type casting, boolean conversion, NULL/empty PK filtering, and duplicate handling. The data loader tests cover date parsing, boolean parsing, column validation, and full Silver/Gold integration loading. The app utility tests cover CSV/Excel export and linear trend forecasting. The AI prompt tests verify system prompt construction from meta_* tables and KPI snapshot injection. The AI agentic loop tests use mocked OpenAI clients to verify tool-calling flow, message history mutation, max iteration limits, and API key validation. The AI SQL tool tests verify read-only enforcement, result structure, NaN→None conversion, and the LLM result formatter. The AI config tests use `importlib.reload()` to verify env var parsing, bounds clamping, and non-numeric fallback behaviour for `AI_MAX_ROWS` and `AI_MAX_ITERATIONS`.
+**52 tests** across 2 test files:
+
+- **`test_generate_data.py`** — Validates CSV generation: verifies all 10 CSV files exist with expected row counts after running `generate_sample_data.py`.
+- **`test_snowflake_sql.py`** — Static analysis of all SQL and Python files: verifies no DuckDB patterns remain, correct Snowflake syntax (FLOAT not REAL, TRY_CAST, DATEDIFF), DDL structure (Bronze tables, Silver FKs, Gold views), ETL stored procedures, semantic model structure, Horizon catalog tags, dashboard imports, and metrics module conventions (FilterParams, Snowpark session, all 26 query functions).
+
+---
+
+## Contributing
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full contributor guide, including:
+
+- **Branching strategy** — Trunk-based development with `feature/`, `fix/`, `ddl/` branch prefixes
+- **Commit convention** — Conventional Commits format (`feat:`, `fix:`, `ddl:`, `docs:`, etc.)
+- **Code review standards** — What reviewers check, response expectations
+- **SQL change management** — Process for DDL changes with backwards-compatibility rules and rollback plans
+- **Security standards** — PII/PHI handling, credential management, dependency review
+
+Additional governance documents:
+
+| Document | Purpose |
+|----------|---------|
+| [`.github/pull_request_template.md`](.github/pull_request_template.md) | Standardized PR format with quality and DDL checklists |
+| [`.github/CODEOWNERS`](.github/CODEOWNERS) | Automated review routing by file area |
+| [`.claude/skills/standards.md`](.claude/skills/standards.md) | Coding conventions (Python, SQL, testing, security, CI/CD) |
 
 ---
 
@@ -487,18 +499,14 @@ pytest tests/ -v
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| streamlit | ≥ 1.30.0 | Web framework and UI |
+| streamlit | ≥ 1.30.0 | Web framework and UI (provided by SiS runtime) |
 | pandas | ≥ 2.0.0 | Data manipulation and DataFrame results |
 | plotly | ≥ 5.18.0 | Interactive visualizations |
 | numpy | ≥ 1.24.0 | Numerical calculations and trend extrapolation |
-| duckdb | ≥ 1.0.0 | Columnar OLAP database engine (Snowflake-like architecture) |
-| requests | ≥ 2.28.0 | Cube REST API client for semantic layer queries |
-| neo4j | ≥ 5.0.0 | Neo4j Python driver for knowledge graph queries |
+| snowflake-connector-python | ≥ 3.6.0 | Snowflake database connectivity |
+| snowflake-snowpark-python | ≥ 1.11.0 | Snowpark DataFrame API and session management |
 | openpyxl | ≥ 3.1.0 | Excel export support |
-| openai | ≥ 1.0.0 | OpenRouter API client (OpenAI-compatible) for the AI tab |
-| python-dotenv | ≥ 1.0.0 | Loads `OPENROUTER_API_KEY` from the `.env` file |
-| streamlit-shadcn-ui | latest | Polished KPI metric cards |
-| streamlit-extras | latest | Metric card styling |
-| graphviz | ≥ 0.20.0 | Publication-quality diagrams for metadata pages (Data Lineage, Knowledge Graph, Semantic Layer, AI Architecture) |
+| python-dotenv | ≥ 1.0.0 | Loads environment variables from `.env` (local dev only) |
 | pytest | ≥ 7.0.0 | Unit testing (dev) |
 | pytest-cov | ≥ 4.0.0 | Coverage measurement in CI and locally (dev) |
+| ruff | ≥ 0.8.0 | Linting and formatting (dev) |
