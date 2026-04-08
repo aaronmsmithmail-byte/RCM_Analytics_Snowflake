@@ -171,9 +171,18 @@ make deploy    # deploy DDL to Snowflake
 
 ## CI/CD
 
-- GitHub Actions workflow: `.github/workflows/deploy-snowflake.yml`
-- Deploys on push to `main` when `snowflake/**` files change
+**CI** (`.github/workflows/ci.yml`) — runs on every push and PR:
+- 3 parallel jobs: Lint (ruff), Test (pytest + coverage), Security (bandit + pip-audit)
+
+**CD** (`.github/workflows/deploy-snowflake.yml`) — runs on push to `main` when `snowflake/**` changes:
+- Phase 1: Lint & Test gate
+- Phase 2: Deploy DDL (schemas, tables, views, stages)
+- Phase 3: Deploy ETL & Metadata (stored procedures, tasks, metadata, catalog)
+- Phase 4: Deploy Cortex model + Streamlit app (parallel)
+- Phase 5: Post-deploy verification (smoke tests on table counts, metadata, procedures)
 - Requires GitHub Secrets: `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`
+- Requires GitHub Environment: `snowflake-prod` (supports manual approval gates)
+- Can be triggered manually via `workflow_dispatch` in the Actions UI
 - Snowflake CLI config template: `snowflake.yml.example`
 
 ---

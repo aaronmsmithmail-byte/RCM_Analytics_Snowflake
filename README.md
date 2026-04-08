@@ -441,15 +441,44 @@ Issues appear in a collapsible **Data Quality** panel and on the dedicated **Dat
 
 ---
 
-## CI / Continuous Integration
+## CI/CD
 
-A GitHub Actions workflow (`.github/workflows/ci.yml`) runs automatically on every push and pull request. It contains three parallel jobs:
+### CI — Continuous Integration
+
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs automatically on **every push and pull request**. It contains three parallel jobs:
 
 | Job | What it checks | Key tools |
 |-----|---------------|-----------|
 | **Lint** | Code style + formatting | `ruff check`, `ruff format --check` |
 | **Test** | Full test suite + coverage | `pytest --cov`, coverage PR comment |
 | **Security** | Static analysis + dependency vulnerabilities | `bandit`, `pip-audit` |
+
+### CD — Continuous Deployment
+
+A second workflow (`.github/workflows/deploy-snowflake.yml`) deploys to Snowflake automatically when changes to `snowflake/**` files are pushed to `main`. It can also be triggered manually via the GitHub Actions UI (`workflow_dispatch`).
+
+The pipeline runs in 5 sequential phases:
+
+```
+Phase 1: Lint & Test          ← CI gate (must pass before any deployment)
+    │
+Phase 2: Deploy DDL           ← Schemas, tables, views, stages (01-05_*.sql)
+    │
+Phase 3: Deploy ETL           ← Stored procedures, tasks, metadata, Horizon catalog
+    │
+Phase 4: Deploy Cortex        ← Semantic model YAML → @RCM_STAGE/cortex/
+         Deploy Streamlit      ← Git repo fetch + SiS app deploy (parallel)
+    │
+Phase 5: Verify Deployment    ← Smoke tests (table counts, metadata, procedures)
+```
+
+**Prerequisites** (one-time setup):
+
+1. **GitHub Secrets** — Add `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD` in repo Settings → Secrets
+2. **GitHub Environment** — Create a `snowflake-prod` environment in Settings → Environments (optionally add required reviewers for manual approval before deploy)
+3. **CSV data** — Upload generated CSVs to `@RCM_STAGE` once before the first ETL run
+
+**Manual trigger:** Actions tab → Deploy to Snowflake → Run workflow → select `main`
 
 ### Running CI locally
 
