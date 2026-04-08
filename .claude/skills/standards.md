@@ -17,13 +17,13 @@ changes against each applicable section.
 ## 1. Data Modeling Standards
 
 ### Table Naming (Medallion Architecture)
-| Layer | Prefix | Example | Purpose |
+| Layer | Schema | Example | Purpose |
 |-------|--------|---------|---------|
-| Bronze | `bronze_*` | `bronze_claims` | Raw CSV ingestion, all TEXT columns |
-| Silver | `silver_*` | `silver_claims` | Typed, FK-constrained, validated |
-| Gold | `gold_*` | `gold_monthly_kpis` | SQL VIEWs — pre-aggregated KPIs |
-| Metadata | `meta_*` | `meta_kpi_catalog` | AI-queryable semantic/KG tables |
-| Pipeline | `pipeline_*` | `pipeline_runs` | ETL tracking and data freshness |
+| Bronze | `BRONZE` | `BRONZE.CLAIMS` | Raw CSV ingestion, all VARCHAR columns |
+| Silver | `SILVER` | `SILVER.CLAIMS` | Typed (FLOAT/INTEGER), FK-constrained, validated |
+| Gold | `GOLD` | `GOLD.MONTHLY_KPIS` | SQL VIEWs — pre-aggregated KPIs |
+| Metadata | `METADATA` | `METADATA.KPI_CATALOG` | KPI definitions, semantic layer, knowledge graph |
+| Staging | `STAGING` | `STAGING.RCM_STAGE` | Internal stages, ETL procedures, tasks |
 
 ### Column Naming
 | Pattern | Convention | Examples |
@@ -68,7 +68,7 @@ changes against each applicable section.
 ### Functions
 | Prefix | Purpose | Example |
 |--------|---------|---------|
-| `query_*` | KPI metric queries | `query_denial_rate(p, db_path=None)` |
+| `query_*` | KPI metric queries | `query_denial_rate(p)` |
 | `get_*` | Data retrieval (non-metric) | `get_connection()`, `get_kg_nodes()` |
 | `is_*` / `has_*` | Boolean checks | `is_cube_available()`, `has_medallion_schema()` |
 | `build_*` | Construct complex objects | `build_filter_cte()`, `build_system_prompt()` |
@@ -115,20 +115,10 @@ from src.data_loader import load_silver_data
 ### Optional Dependencies
 ```python
 try:
-    from neo4j import GraphDatabase
-    _HAS_NEO4J = True
+    import graphviz
+    _HAS_GRAPHVIZ = True
 except ImportError:
-    _HAS_NEO4J = False
-```
-
-### Lazy Imports (when module may not be available)
-```python
-def _try_cube_query(...):
-    try:
-        from src.cube_client import query_cube, is_cube_available
-        ...
-    except Exception:
-        return None
+    _HAS_GRAPHVIZ = False
 ```
 
 ### Environment Variables
@@ -286,10 +276,136 @@ Rules:
 
 ## 9. Security Standards
 
-- SQL injection: Use `_esc()` helper for string literals in SQL; avoid f-strings with user input
-- Cortex Analyst generates SQL from natural language — no direct user SQL execution
-- API keys: Never hardcoded — always from env vars via `os.environ.get()`
+### Credential & Secret Management
+- **Never** hardcode credentials, API keys, or account identifiers in code
 - `.env` files: Listed in `.gitignore`, never committed
 - Snowflake credentials: Stored in GitHub Secrets for CI/CD, or `snowflake.yml` (gitignored) for CLI
+- Snowflake Git integration: Credentials stored as Snowflake SECRET objects
+
+### SQL Injection Prevention
+- Use `_esc()` helper for string literals in dynamic SQL
+- Cortex Analyst generates SQL from natural language — users never execute SQL directly
+- All metric queries use controlled `FilterParams` values, not raw user input
+
+### PII / PHI Data Handling
+- Patient name, DOB, ZIP code, and member ID are classified as **PII** in the Horizon Data Catalog
+- Never log, print, or include PII values in error messages or debug output
+- Never use real patient data in tests — use `generate_sample_data.py` for fully synthetic data
+- All PII columns are tagged with `SENSITIVITY = 'PII'` via `tags_and_comments.sql`
+
+### Runtime Safety
 - Row limits: AI queries capped at `_MAX_ROWS` (default 100) to prevent context overflow
 - Iteration limits: Tool-calling loop capped at `_MAX_ITERATIONS` (default 8) to prevent runaway loops
+- Warehouse auto-suspend: 60 seconds to prevent idle compute costs
+
+---
+
+## 10. SQL Formatting Standards
+
+### Keyword Casing
+All SQL keywords UPPERCASE, all identifiers UPPERCASE:
+
+```sql
+-- Good
+SELECT C.CLAIM_ID, C.TOTAL_CHARGE_AMOUNT
+FROM RCM_ANALYTICS.SILVER.CLAIMS C
+LEFT JOIN RCM_ANALYTICS.SILVER.ENCOUNTERS E
+    ON C.ENCOUNTER_ID = E.ENCOUNTER_ID
+WHERE C.DATE_OF_SERVICE BETWEEN '2024-01-01' AND '2024-12-31';
+
+-- Bad
+select c.claim_id from silver.claims c;
+```
+
+### CTE Naming
+CTEs should use descriptive `snake_case` names prefixed by purpose:
+
+```sql
+WITH filtered_claims AS (
+    -- Base filter applied to all downstream queries
+    SELECT ...
+),
+monthly_totals AS (
+    -- Aggregate filtered claims by month
+    SELECT ...
+)
+SELECT * FROM monthly_totals;
+```
+
+### JOIN Formatting
+- Always use explicit `JOIN` syntax (never comma-join)
+- Put `ON` clause on a new indented line
+- Qualify all column references with table aliases
+
+```sql
+SELECT C.CLAIM_ID, P.PAYMENT_AMOUNT
+FROM SILVER.CLAIMS C
+LEFT JOIN SILVER.PAYMENTS P
+    ON C.CLAIM_ID = P.CLAIM_ID
+LEFT JOIN SILVER.ENCOUNTERS E
+    ON C.ENCOUNTER_ID = E.ENCOUNTER_ID;
+```
+
+### Stored Procedure Standards
+- Name with `SP_` prefix: `SP_BRONZE_TO_SILVER`, `SP_LOAD_STAGE_TO_BRONZE`
+- Include a header comment with purpose, inputs, outputs
+- Use `EXECUTE AS CALLER` for transparency
+- Log execution to `METADATA.PIPELINE_RUNS` with row counts
+- Handle errors gracefully — log and continue, don't crash the pipeline
+
+### Gold View Standards
+- Gold views are **read-only aggregations** — never write to Gold
+- Use `COALESCE()` for NULL safety in all aggregations
+- Use `NULLIF(denominator, 0)` to prevent division-by-zero
+- Include `TO_CHAR(TRY_TO_DATE(...), 'YYYY-MM')` for time-series grouping
+
+---
+
+## 11. Change Management Standards
+
+### DDL Changes (Schema Modifications)
+All DDL changes must follow this process:
+
+1. **Branch** — Create a `ddl/` prefixed branch
+2. **Modify DDL files** — Update the numbered DDL scripts in `snowflake/ddl/`
+3. **Update ETL** — Modify stored procedures if column mappings change
+4. **Update downstream** — Gold views, metrics.py, semantic model, catalog
+5. **Test locally** — Run `make verify` to confirm no regressions
+6. **PR with DDL checklist** — Use the DDL checklist in the PR template
+7. **Document rollback** — Include how to undo the change
+
+### Backwards Compatibility
+- **Adding columns**: Always safe — existing queries are unaffected
+- **Changing column types**: Use `TRY_CAST()` in migration; never change in-place
+- **Dropping columns**: Verify no downstream dependencies first; remove in reverse order
+- **Renaming columns**: Add new column, migrate data, update references, then drop old
+
+### Semantic Model Changes
+When modifying `rcm_semantic_model.yaml`:
+- Test with Cortex Analyst before merging (ask sample questions)
+- Re-stage the YAML to `@RCM_STAGE/cortex/` after deployment
+- Verify existing sample questions still return correct results
+
+---
+
+## 12. CI/CD Standards
+
+### Pipeline Structure
+```
+Push to any branch  →  CI (lint + test + security)
+Push to main        →  CI → CD (DDL → ETL → Cortex → Streamlit)
+```
+
+### CI Gates (must all pass)
+| Gate | Tool | Config |
+|------|------|--------|
+| Lint | `ruff check` | `ruff.toml` |
+| Format | `ruff format --check` | `ruff.toml` |
+| Tests | `pytest` | `tests/` |
+| Security (static) | `bandit` | `bandit.toml` |
+| Security (deps) | `pip-audit` | `requirements.txt` |
+
+### CD Requirements
+- Deployment to Snowflake requires the `snowflake-prod` environment approval
+- DDL deploys before ETL, ETL before Cortex/Streamlit (dependency order)
+- All deployment steps are idempotent (`CREATE OR REPLACE`, `IF NOT EXISTS`)

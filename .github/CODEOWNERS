@@ -1,0 +1,31 @@
+# Code Owners — automatically assigns reviewers based on file paths.
+# Each line is a file pattern followed by one or more GitHub usernames.
+# The last matching pattern takes precedence.
+#
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ── Default owner (all files) ────────────────────────────────────────
+*                                       @aaronmsmithmail-byte
+
+# ── Snowflake DDL & ETL (schema changes require careful review) ──────
+snowflake/ddl/                          @aaronmsmithmail-byte
+snowflake/etl/                          @aaronmsmithmail-byte
+snowflake/setup/                        @aaronmsmithmail-byte
+
+# ── Cortex Analyst (semantic model changes affect AI behavior) ───────
+snowflake/cortex/                       @aaronmsmithmail-byte
+
+# ── Streamlit Dashboard ──────────────────────────────────────────────
+snowflake/streamlit/                    @aaronmsmithmail-byte
+
+# ── CI/CD & DevOps ───────────────────────────────────────────────────
+.github/                                @aaronmsmithmail-byte
+Makefile                                @aaronmsmithmail-byte
+
+# ── Data Governance (catalog, tags, PII classification) ──────────────
+snowflake/catalog/                      @aaronmsmithmail-byte
+
+# ── Project Standards & AI Governance ────────────────────────────────
+CLAUDE.md                               @aaronmsmithmail-byte
+.claude/                                @aaronmsmithmail-byte
+CONTRIBUTING.md                         @aaronmsmithmail-byte
