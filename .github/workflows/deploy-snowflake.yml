@@ -8,7 +8,21 @@ on:
       - '.github/workflows/deploy-snowflake.yml'
   workflow_dispatch:
 
+# ── Shared Snowflake connection config ──────────────────────────────
+# Defined once here, inherited by all jobs via the 'Configure' step.
+env:
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+  SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+  SNOWFLAKE_DATABASE: RCM_ANALYTICS
+  SNOWFLAKE_SCHEMA: STAGING
+  SNOWFLAKE_WAREHOUSE: RCM_WH
+  SNOWFLAKE_ROLE: SYSADMIN
+
 jobs:
+  # ────────────────────────────────────────────────────────────────────
+  # Gate: Lint & Test (must pass before any deployment)
+  # ────────────────────────────────────────────────────────────────────
   lint-and-test:
     name: Lint & Test
     runs-on: ubuntu-latest
@@ -34,8 +48,11 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short
 
+  # ────────────────────────────────────────────────────────────────────
+  # Phase 1: Deploy DDL (schemas, tables, views, stages)
+  # ────────────────────────────────────────────────────────────────────
   deploy-ddl:
-    name: Deploy DDL & ETL
+    name: Deploy DDL
     needs: lint-and-test
     runs-on: ubuntu-latest
     environment: snowflake-prod
@@ -54,13 +71,13 @@ jobs:
           mkdir -p ~/.snowflake
           cat > ~/.snowflake/config.toml << EOF
           [connections.default]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
-          database = "RCM_ANALYTICS"
-          schema = "STAGING"
-          warehouse = "RCM_WH"
-          role = "SYSADMIN"
+          account = "$SNOWFLAKE_ACCOUNT"
+          user = "$SNOWFLAKE_USER"
+          password = "$SNOWFLAKE_PASSWORD"
+          database = "$SNOWFLAKE_DATABASE"
+          schema = "$SNOWFLAKE_SCHEMA"
+          warehouse = "$SNOWFLAKE_WAREHOUSE"
+          role = "$SNOWFLAKE_ROLE"
           EOF
 
       - name: Deploy environment setup
@@ -81,21 +98,59 @@ jobs:
       - name: Deploy Stages
         run: snow sql -f snowflake/ddl/05_stages.sql
 
-      - name: Deploy ETL stored procedures
+  # ────────────────────────────────────────────────────────────────────
+  # Phase 2: Deploy ETL (stored procedures, metadata, catalog, tasks)
+  # ────────────────────────────────────────────────────────────────────
+  deploy-etl:
+    name: Deploy ETL & Metadata
+    needs: deploy-ddl
+    runs-on: ubuntu-latest
+    environment: snowflake-prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        uses: Snowflake-Labs/snowflake-cli-action@v1
+        with:
+          cli-version: "latest"
+          default-config-file-path: "snowflake.yml"
+
+      - name: Configure Snowflake connection
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/config.toml << EOF
+          [connections.default]
+          account = "$SNOWFLAKE_ACCOUNT"
+          user = "$SNOWFLAKE_USER"
+          password = "$SNOWFLAKE_PASSWORD"
+          database = "$SNOWFLAKE_DATABASE"
+          schema = "$SNOWFLAKE_SCHEMA"
+          warehouse = "$SNOWFLAKE_WAREHOUSE"
+          role = "$SNOWFLAKE_ROLE"
+          EOF
+
+      - name: Deploy Stage→Bronze stored procedure
+        run: snow sql -f snowflake/etl/load_stage_to_bronze.sql
+
+      - name: Deploy Bronze→Silver stored procedure
         run: snow sql -f snowflake/etl/transform_bronze_to_silver.sql
 
-      - name: Deploy Task scheduling
+      - name: Deploy daily ETL task
         run: snow sql -f snowflake/etl/tasks.sql
 
-      - name: Seed metadata
+      - name: Seed metadata (KPI catalog, semantic layer, knowledge graph)
         run: snow sql -f snowflake/etl/seed_metadata.sql
 
-      - name: Deploy Horizon catalog
+      - name: Deploy Horizon Data Catalog (tags, comments, PII classification)
         run: snow sql -f snowflake/catalog/tags_and_comments.sql
 
+  # ────────────────────────────────────────────────────────────────────
+  # Phase 3a: Deploy Cortex Analyst semantic model
+  # ────────────────────────────────────────────────────────────────────
   deploy-cortex-model:
     name: Deploy Cortex Analyst Model
-    needs: deploy-ddl
+    needs: deploy-etl
     runs-on: ubuntu-latest
     environment: snowflake-prod
     steps:
@@ -112,13 +167,13 @@ jobs:
           mkdir -p ~/.snowflake
           cat > ~/.snowflake/config.toml << EOF
           [connections.default]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
-          database = "RCM_ANALYTICS"
-          schema = "STAGING"
-          warehouse = "RCM_WH"
-          role = "SYSADMIN"
+          account = "$SNOWFLAKE_ACCOUNT"
+          user = "$SNOWFLAKE_USER"
+          password = "$SNOWFLAKE_PASSWORD"
+          database = "$SNOWFLAKE_DATABASE"
+          schema = "$SNOWFLAKE_SCHEMA"
+          warehouse = "$SNOWFLAKE_WAREHOUSE"
+          role = "$SNOWFLAKE_ROLE"
           EOF
 
       - name: Stage Cortex Analyst semantic model
@@ -127,9 +182,12 @@ jobs:
             @RCM_ANALYTICS.STAGING.RCM_STAGE/cortex/ \
             --overwrite
 
+  # ────────────────────────────────────────────────────────────────────
+  # Phase 3b: Deploy Streamlit app (fetch Git repo so SiS picks up changes)
+  # ────────────────────────────────────────────────────────────────────
   deploy-streamlit:
     name: Deploy Streamlit App
-    needs: deploy-ddl
+    needs: deploy-etl
     runs-on: ubuntu-latest
     environment: snowflake-prod
     steps:
@@ -146,14 +204,18 @@ jobs:
           mkdir -p ~/.snowflake
           cat > ~/.snowflake/config.toml << EOF
           [connections.default]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
-          database = "RCM_ANALYTICS"
-          schema = "STAGING"
-          warehouse = "RCM_WH"
-          role = "SYSADMIN"
+          account = "$SNOWFLAKE_ACCOUNT"
+          user = "$SNOWFLAKE_USER"
+          password = "$SNOWFLAKE_PASSWORD"
+          database = "$SNOWFLAKE_DATABASE"
+          schema = "$SNOWFLAKE_SCHEMA"
+          warehouse = "$SNOWFLAKE_WAREHOUSE"
+          role = "$SNOWFLAKE_ROLE"
           EOF
+
+      - name: Fetch latest code into Snowflake Git repo
+        run: |
+          snow sql -q "ALTER GIT REPOSITORY RCM_ANALYTICS.STAGING.RCM_REPO FETCH;"
 
       - name: Deploy Streamlit app
         run: |
@@ -163,3 +225,90 @@ jobs:
             --database RCM_ANALYTICS \
             --schema STAGING \
             --warehouse RCM_WH
+
+  # ────────────────────────────────────────────────────────────────────
+  # Phase 4: Post-deploy verification (smoke tests)
+  # ────────────────────────────────────────────────────────────────────
+  verify-deployment:
+    name: Verify Deployment
+    needs: [deploy-cortex-model, deploy-streamlit]
+    runs-on: ubuntu-latest
+    environment: snowflake-prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        uses: Snowflake-Labs/snowflake-cli-action@v1
+        with:
+          cli-version: "latest"
+
+      - name: Configure Snowflake connection
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/config.toml << EOF
+          [connections.default]
+          account = "$SNOWFLAKE_ACCOUNT"
+          user = "$SNOWFLAKE_USER"
+          password = "$SNOWFLAKE_PASSWORD"
+          database = "$SNOWFLAKE_DATABASE"
+          schema = "$SNOWFLAKE_SCHEMA"
+          warehouse = "$SNOWFLAKE_WAREHOUSE"
+          role = "$SNOWFLAKE_ROLE"
+          EOF
+
+      - name: Verify Bronze tables exist (10 expected)
+        run: |
+          snow sql -q "
+            SELECT COUNT(*) AS table_count
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_CATALOG = 'RCM_ANALYTICS'
+              AND TABLE_SCHEMA = 'BRONZE'
+              AND TABLE_TYPE = 'BASE TABLE';
+          "
+
+      - name: Verify Silver tables exist (10 expected)
+        run: |
+          snow sql -q "
+            SELECT COUNT(*) AS table_count
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_CATALOG = 'RCM_ANALYTICS'
+              AND TABLE_SCHEMA = 'SILVER'
+              AND TABLE_TYPE = 'BASE TABLE';
+          "
+
+      - name: Verify Gold views exist (5 expected)
+        run: |
+          snow sql -q "
+            SELECT COUNT(*) AS view_count
+            FROM INFORMATION_SCHEMA.VIEWS
+            WHERE TABLE_CATALOG = 'RCM_ANALYTICS'
+              AND TABLE_SCHEMA = 'GOLD';
+          "
+
+      - name: Verify Metadata tables populated
+        run: |
+          snow sql -q "
+            SELECT
+              (SELECT COUNT(*) FROM RCM_ANALYTICS.METADATA.KPI_CATALOG) AS kpi_count,
+              (SELECT COUNT(*) FROM RCM_ANALYTICS.METADATA.SEMANTIC_LAYER) AS semantic_count,
+              (SELECT COUNT(*) FROM RCM_ANALYTICS.METADATA.KG_NODES) AS kg_node_count,
+              (SELECT COUNT(*) FROM RCM_ANALYTICS.METADATA.KG_EDGES) AS kg_edge_count;
+          "
+
+      - name: Verify Cortex semantic model is staged
+        run: |
+          snow sql -q "LS @RCM_ANALYTICS.STAGING.RCM_STAGE/cortex/;"
+
+      - name: Verify stored procedures exist
+        run: |
+          snow sql -q "
+            SELECT PROCEDURE_NAME
+            FROM INFORMATION_SCHEMA.PROCEDURES
+            WHERE PROCEDURE_CATALOG = 'RCM_ANALYTICS'
+              AND PROCEDURE_SCHEMA = 'STAGING'
+            ORDER BY PROCEDURE_NAME;
+          "
+
+      - name: Deployment verified
+        run: echo "All post-deploy verification checks passed."
