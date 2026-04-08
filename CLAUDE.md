@@ -33,7 +33,7 @@ CSV files → Snowflake Internal Stage (@RCM_STAGE)
 | `snowflake/streamlit/src/metrics.py` | All 26 `query_*` KPI functions + `FilterParams` dataclass |
 | `snowflake/streamlit/src/data_loader.py` | Snowpark session-based data loading |
 | `snowflake/streamlit/src/cortex_chat.py` | Cortex Analyst chat UI (replaces OpenRouter) |
-| `snowflake/streamlit/src/metadata_pages.py` | Seven sidebar metadata pages |
+| `snowflake/streamlit/src/metadata_pages.py` | Eight sidebar metadata pages |
 | `snowflake/streamlit/src/validators.py` | SQL COUNT-based data quality assertions |
 | `generate_sample_data.py` | Creates CSV files for upload to Snowflake stage |
 | `snowflake/deploy.sql` | Master deployment script |

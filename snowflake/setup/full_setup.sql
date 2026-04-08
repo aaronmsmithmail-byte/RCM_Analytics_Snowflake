@@ -88,6 +88,7 @@ USE WAREHOUSE RCM_WH;
 CREATE OR REPLACE GIT REPOSITORY RCM_REPO
     API_INTEGRATION = GITHUB_INTEGRATION
     GIT_CREDENTIALS = RCM_ANALYTICS.STAGING.GITHUB_SECRET
+    -- NOTE: Update this URL if you forked the repository to your own GitHub account
     ORIGIN = 'https://github.com/aaronmsmithmail-byte/RCM_Analytics_Snowflake.git';
 
 -- 2b. Fetch latest from GitHub

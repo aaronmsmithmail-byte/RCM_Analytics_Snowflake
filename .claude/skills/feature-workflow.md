@@ -60,7 +60,7 @@ Implement against the approved plan:
    - CLAUDE.md test counts and module descriptions
    - README: tab count, metadata page count, test count, dependencies, setup
    - .env.example if new env vars added
-   - Metadata pages in `src/metadata_pages.py` if the change affects data lineage, knowledge graph, semantic layer, or business process flow
+   - Metadata pages in `snowflake/streamlit/src/metadata_pages.py` if the change affects data lineage, knowledge graph, semantic layer, or business process flow
    - `_TABLE_CATALOG` and `_KG_NODES` in `metadata_pages.py` if new tables/entities added
 
 ---
@@ -85,7 +85,7 @@ Pass criteria: Zero failures. Note the test count for Gate 4.
 ### Gate 2: Linting
 
 ```bash
-ruff check src/ tests/ app.py generate_sample_data.py
+ruff check snowflake/streamlit/ tests/ generate_sample_data.py
 ```
 
 Pass criteria: Zero violations. Run `ruff check --fix` for auto-fixable issues.
@@ -93,7 +93,7 @@ Pass criteria: Zero violations. Run `ruff check --fix` for auto-fixable issues.
 ### Gate 3: New Code Has Tests
 
 1. `git diff --name-only` to find modified source files
-2. For each modified `src/*.py`, check if new `def` statements were added
+2. For each modified `snowflake/streamlit/src/*.py`, check if new `def` statements were added
 3. New `query_*` functions need at least 2 tests (per CLAUDE.md)
 4. New public functions need at least 1 test
 

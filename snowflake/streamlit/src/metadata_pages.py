@@ -140,9 +140,7 @@ def _new_digraph(name="G", **kwargs):
 
 def _render_graphviz(dot):
     """Render a graphviz object or DOT string via st.graphviz_chart."""
-    if _HAS_GRAPHVIZ and hasattr(dot, "source"):
-        _render_graphviz(dot)
-    elif hasattr(dot, "source"):
+    if hasattr(dot, "source"):
         st.graphviz_chart(dot.source, use_container_width=True)
     else:
         st.graphviz_chart(str(dot), use_container_width=True)

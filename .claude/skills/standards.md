@@ -38,19 +38,21 @@ changes against each applicable section.
 | All columns | `snake_case` | Never camelCase or PascalCase |
 
 ### Type Conventions
-| Layer | Column type | DuckDB type |
-|-------|------------|-------------|
-| Bronze | Everything | `TEXT` |
-| Silver | IDs, codes, dates | `TEXT` |
-| Silver | Money, percentages | `REAL` |
+| Layer | Column type | Snowflake type |
+|-------|------------|----------------|
+| Bronze | Everything | `VARCHAR` |
+| Silver | IDs, codes, dates | `VARCHAR` |
+| Silver | Money, percentages | `FLOAT` |
 | Silver | Counts, booleans | `INTEGER` |
 | Silver | Timestamps | `TIMESTAMP` |
 
 ### SQL Conventions
-- Parameterized `?` placeholders — **never** f-strings with user input
-- All metric queries use `build_filter_cte(fp)` for consistent filtering
-- Date formatting: `strftime(CAST(col AS DATE), '%Y-%m')`
-- Date arithmetic: `date_diff('day', CAST(d1 AS DATE), CAST(d2 AS DATE))`
+- All Snowflake SQL uses **uppercase identifiers** (e.g. `SILVER.CLAIMS`, not `silver_claims`)
+- All metric queries use a shared `WITH filtered_claims AS (...)` CTE via `FilterParams` for consistent filtering
+- Date formatting: `TO_CHAR(TRY_TO_DATE(col, 'YYYY-MM-DD'), 'YYYY-MM')` — always specify format
+- Date arithmetic: `DATEDIFF('day', start, end)` — not `date_diff` or `julianday`
+- Type casting: `TRY_CAST(col AS FLOAT)` — not `CAST AS REAL`
+- Current date: `CURRENT_DATE()` — not `CURRENT_DATE`
 - Boolean conversion from text: `CASE UPPER(TRIM(col)) WHEN 'TRUE' THEN 1 WHEN '1' THEN 1 WHEN 'YES' THEN 1 ELSE 0 END`
 - Empty string → NULL: `NULLIF(TRIM(COALESCE(col, '')), '')`
 - NULL PKs filtered: `WHERE pk IS NOT NULL AND pk != ''`
@@ -101,12 +103,13 @@ import time
 from dataclasses import dataclass
 
 # 2. Third-party packages
-import duckdb
 import numpy as np
 import pandas as pd
+import streamlit as st
 
 # 3. Local modules (first-party = src)
-from src.database import build_filter_cte, query_to_dataframe
+from src.metrics import FilterParams, query_days_in_ar
+from src.data_loader import load_silver_data
 ```
 
 ### Optional Dependencies
@@ -148,56 +151,25 @@ def _try_cube_query(...):
 
 ---
 
-## 4. Client Module Standards
+## 4. Module Standards
 
-Every external service client (`src/*_client.py`) must follow this pattern:
+### Snowpark Session Access
+All data access goes through the Snowpark session (provided by SiS or created from env vars):
 
 ```python
-"""
-Service Name Client
-====================
-One-line description.
+from snowflake.snowpark.context import get_active_session
 
-Gracefully returns None when service is unavailable so the app
-falls back to DuckDB meta_* tables.
-
-Environment variables:
-    SERVICE_URL — description (default: ...)
-"""
-
-import os
-import time
-
-SERVICE_URL = os.environ.get("SERVICE_URL", "default")
-
-_health_cache = {"available": None, "checked_at": 0}
-_HEALTH_TTL = 60  # seconds
-
-
-def is_service_available() -> bool:
-    """Check if service is reachable. Result cached for 60 seconds."""
-    now = time.time()
-    if now - _health_cache["checked_at"] < _HEALTH_TTL and _health_cache["available"] is not None:
-        return _health_cache["available"]
-    try:
-        # ... check connectivity ...
-        _health_cache["available"] = True
-    except Exception:
-        _health_cache["available"] = False
-    _health_cache["checked_at"] = now
-    return _health_cache["available"]
-
-
-def get_data():
-    """Returns structured data, or None if unavailable."""
-    if not is_service_available():
-        return None
-    try:
-        # ... query service ...
-        return result
-    except Exception:
-        return None
+session = get_active_session()
+df = session.sql("SELECT * FROM RCM_ANALYTICS.SILVER.CLAIMS").to_pandas()
 ```
+
+### Caching
+Use `@st.cache_data(ttl=300)` for data loading functions (5-minute TTL).
+Use uncached queries for pages that perform writes (e.g. Feature Backlog).
+
+### Graceful Degradation
+When a Snowflake query or feature is unavailable (e.g. Cortex functions, metadata tables),
+return empty results or show a user-friendly message — never crash the page.
 
 ---
 
@@ -210,23 +182,25 @@ def get_data():
   - Good: `test_missing_csv_skips_gracefully`, `test_denial_rate_non_negative`
   - Bad: `test_1`, `test_function`, `test_it_works`
 
-### Fixtures
+### Test Patterns
+Tests use static analysis of SQL and Python files (no live Snowflake connection required):
+
 ```python
-@pytest.fixture
-def db(tmp_path):
-    """Temporary DuckDB database with Silver-layer data."""
-    db_path = str(tmp_path / "test.db")
-    conn = duckdb.connect(db_path)
-    create_tables(conn)
-    # ... insert test data ...
-    conn.close()
-    return db_path
+class TestBronzeTables:
+    def test_all_bronze_tables(self):
+        sql = Path("snowflake/ddl/01_bronze_tables.sql").read_text()
+        for table in EXPECTED_BRONZE_TABLES:
+            assert table in sql
+
+    def test_loaded_at_column(self):
+        sql = Path("snowflake/ddl/01_bronze_tables.sql").read_text()
+        assert sql.count("_LOADED_AT") >= 10
 ```
 
 ### Required Coverage
 - Every `query_*` function: minimum 2 tests (happy path + empty data)
 - Every new public function: at least 1 test
-- Client modules: test unavailable → returns None, test mocked success
+- New SQL files: add static analysis tests verifying structure and conventions
 
 ### Assertions
 - Use pytest `assert` (not unittest methods)
@@ -240,14 +214,13 @@ def db(tmp_path):
 
 ### Docstrings (Google style)
 ```python
-def query_denial_rate(p: FilterParams, db_path=None):
+def query_denial_rate(p: FilterParams):
     """Calculate Claim Denial Rate.
 
     Denial Rate = (Denied + Appealed Claims) / Total Claims * 100
 
     Args:
-        p:       FilterParams with date range and optional filters.
-        db_path: Optional DuckDB path override for testing.
+        p: FilterParams with date range and optional filters.
 
     Returns:
         tuple: (denial_rate_percentage, trend_dataframe)
@@ -281,7 +254,7 @@ Every env var the code reads must appear in `.env.example` with:
 ### Configuration: `ruff.toml`
 - Target: Python 3.11, line-length 120
 - Rules: E, W, F, I, UP, B, SIM, T20
-- Run: `ruff check src/ tests/ app.py generate_sample_data.py`
+- Run: `ruff check snowflake/streamlit/ tests/ generate_sample_data.py`
 - Must pass with zero violations before every commit
 
 ### Key Rules
@@ -298,9 +271,10 @@ Two error handling patterns, depending on context:
 
 | Context | On error, return | Example |
 |---------|-----------------|---------|
-| **Client modules** (`cube_client`, `neo4j_client`) | `None` — caller falls back to DuckDB | `get_kg_nodes()` returns `None` |
-| **Metadata/SQL queries** (`_query_meta`, `execute_sql_tool`) | Empty result (`pd.DataFrame()` or `{"error": msg}`) | Page shows empty table instead of crashing |
-| **ETL functions** (`load_csv_to_bronze`) | Skip gracefully with log message | Missing CSV prints `[SKIP]`, continues |
+| **Metadata queries** (`_query_meta`) | Empty `pd.DataFrame()` | Page shows empty table instead of crashing |
+| **Cortex AI** (`cortex_chat.py`) | Fallback from REST to SQL, then error message | Chat shows user-friendly error |
+| **Data loading** (`data_loader.py`) | Empty DataFrame with warning | Dashboard shows partial data |
+| **ETL stored procedures** | Log error in PIPELINE_RUNS | Pipeline continues with next table |
 
 Rules:
 - External service calls (API, database, file I/O) must be wrapped in `try/except`
@@ -312,10 +286,10 @@ Rules:
 
 ## 9. Security Standards
 
-- SQL injection: **Always** use parameterized queries (`?` placeholders)
-- `execute_sql_tool()`: Rejects non-SELECT/WITH queries before execution
+- SQL injection: Use `_esc()` helper for string literals in SQL; avoid f-strings with user input
+- Cortex Analyst generates SQL from natural language — no direct user SQL execution
 - API keys: Never hardcoded — always from env vars via `os.environ.get()`
 - `.env` files: Listed in `.gitignore`, never committed
-- Docker secrets: Passed via environment variables in `docker-compose.yml`
+- Snowflake credentials: Stored in GitHub Secrets for CI/CD, or `snowflake.yml` (gitignored) for CLI
 - Row limits: AI queries capped at `_MAX_ROWS` (default 100) to prevent context overflow
 - Iteration limits: Tool-calling loop capped at `_MAX_ITERATIONS` (default 8) to prevent runaway loops
