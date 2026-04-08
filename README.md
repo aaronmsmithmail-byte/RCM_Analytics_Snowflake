@@ -475,6 +475,26 @@ pytest tests/ -v
 
 ---
 
+## Contributing
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full contributor guide, including:
+
+- **Branching strategy** — Trunk-based development with `feature/`, `fix/`, `ddl/` branch prefixes
+- **Commit convention** — Conventional Commits format (`feat:`, `fix:`, `ddl:`, `docs:`, etc.)
+- **Code review standards** — What reviewers check, response expectations
+- **SQL change management** — Process for DDL changes with backwards-compatibility rules and rollback plans
+- **Security standards** — PII/PHI handling, credential management, dependency review
+
+Additional governance documents:
+
+| Document | Purpose |
+|----------|---------|
+| [`.github/pull_request_template.md`](.github/pull_request_template.md) | Standardized PR format with quality and DDL checklists |
+| [`.github/CODEOWNERS`](.github/CODEOWNERS) | Automated review routing by file area |
+| [`.claude/skills/standards.md`](.claude/skills/standards.md) | Coding conventions (Python, SQL, testing, security, CI/CD) |
+
+---
+
 ## Dependencies
 
 | Package | Version | Purpose |
