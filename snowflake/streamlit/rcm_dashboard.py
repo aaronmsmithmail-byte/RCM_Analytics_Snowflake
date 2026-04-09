@@ -876,7 +876,9 @@ if bad_debt_val > _t["bad_debt_max"]:
     _active_alerts.append(("Bad Debt Rate", f"{bad_debt_val}%", f">{_t['bad_debt_max']}%"))
 
 _alert_icon = "🔴" if _active_alerts else "✅"
-_alert_label = f"{len(_active_alerts)} Alert{'s' if len(_active_alerts) != 1 else ''}" if _active_alerts else "All Clear"
+_alert_label = (
+    f"{len(_active_alerts)} Alert{'s' if len(_active_alerts) != 1 else ''}" if _active_alerts else "All Clear"
+)
 with st.sidebar.expander(f"{_alert_icon} KPI Alerts ({_alert_label})", expanded=bool(_active_alerts)):
     if _active_alerts:
         st.error(
