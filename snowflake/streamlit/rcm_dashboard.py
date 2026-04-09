@@ -875,14 +875,19 @@ if accuracy_val < _t["accuracy_min"]:
 if bad_debt_val > _t["bad_debt_max"]:
     _active_alerts.append(("Bad Debt Rate", f"{bad_debt_val}%", f">{_t['bad_debt_max']}%"))
 
-if _active_alerts:
-    st.sidebar.error(
-        f"🔔 {len(_active_alerts)} KPI Alert{'s' if len(_active_alerts) > 1 else ''} — review Executive Summary"
-    )
-    for _kpi, _val, _thresh in _active_alerts:
-        st.sidebar.markdown(f"&nbsp;&nbsp;• **{_kpi}**: {_val} (threshold {_thresh})")
-else:
-    st.sidebar.success("✅ All KPIs within thresholds")
+_alert_icon = "🔴" if _active_alerts else "✅"
+_alert_label = (
+    f"{len(_active_alerts)} Alert{'s' if len(_active_alerts) != 1 else ''}" if _active_alerts else "All Clear"
+)
+with st.sidebar.expander(f"{_alert_icon} KPI Alerts ({_alert_label})", expanded=bool(_active_alerts)):
+    if _active_alerts:
+        st.error(
+            f"🔔 {len(_active_alerts)} KPI Alert{'s' if len(_active_alerts) > 1 else ''} — review Executive Summary"
+        )
+        for _kpi, _val, _thresh in _active_alerts:
+            st.markdown(f"&nbsp;&nbsp;• **{_kpi}**: {_val} (threshold {_thresh})")
+    else:
+        st.success("✅ All KPIs within thresholds")
 
 # ── Data Freshness Sidebar Panel ─────────────────────────────────────
 st.sidebar.divider()
