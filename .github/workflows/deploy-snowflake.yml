@@ -208,6 +208,9 @@ jobs:
             snow stage copy "$csv" @RCM_ANALYTICS.STAGING.RCM_STAGE --overwrite
           done
 
+      - name: Clear pipeline tracking for fresh timestamps
+        run: snow sql -q "TRUNCATE TABLE IF EXISTS RCM_ANALYTICS.METADATA.PIPELINE_RUNS;"
+
       - name: Run Stage→Bronze ETL
         run: snow sql -q "CALL RCM_ANALYTICS.STAGING.SP_LOAD_STAGE_TO_BRONZE();"
 
